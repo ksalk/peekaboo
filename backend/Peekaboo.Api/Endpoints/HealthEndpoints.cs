@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Peekaboo.Api.Data;
 
 namespace Peekaboo.Api.Endpoints;
@@ -14,7 +15,7 @@ public static class HealthEndpoints
             await command.ExecuteScalarAsync(cancellationToken);
 
             return Results.Ok(new { status = "ok" });
-        });
+        }).AllowAnonymous();
 
         return app;
     }
