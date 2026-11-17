@@ -9,3 +9,43 @@ run = "dotnet build backend/Peekaboo.slnx --nologo"
 [tasks."test:api"]
 description = "Run backend tests"
 run = "dotnet test backend/Peekaboo.slnx --nologo"
+
+[tasks."setup:web"]
+description = "Install frontend dependencies from the lockfile"
+run = "npm --prefix frontend ci"
+
+[tasks."dev:web"]
+description = "Run the frontend dev server"
+run = "npm --prefix frontend run dev"
+
+[tasks."build:web"]
+description = "Build the frontend"
+depends = ["setup:web"]
+run = "npm --prefix frontend run build"
+
+[tasks."check:web"]
+description = "Type-check the frontend"
+depends = ["setup:web"]
+run = "npm --prefix frontend run check"
+
+[tasks."lint:web"]
+description = "Lint the frontend"
+depends = ["setup:web"]
+run = "npm --prefix frontend run lint"
+
+[tasks.dev]
+description = "Run backend and frontend in development mode"
+run = "./scripts/dev.sh"
+
+[tasks.build]
+description = "Build backend and frontend"
+depends = ["build:api", "build:web"]
+
+[tasks.lint]
+description = "Lint everything"
+depends = ["lint:web"]
+
+[tasks.test]
+description = "Run backend tests"
+depends = ["test:api"]
+

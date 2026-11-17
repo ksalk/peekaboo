@@ -1,0 +1,104 @@
+import type { Camera, User } from './types';
+
+interface ProblemDetails {
+  title?: string;
+  detail?: string;
+}
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export const UNAUTHORIZED_EVENT = 'peekaboo:unauthorized';
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...init,
+    headers,
+  });
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  if (response.status === 401 && path !== '/api/auth/login') {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+
+  if (response.status === 429) {
+    throw new ApiError(429, 'Too many attempts. Try again in a few minutes.');
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const payload = contentType.includes('json')
+    ? ((await response.json()) as ProblemDetails)
+    : null;
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      payload?.detail ?? payload?.title ?? `Request failed (${response.status})`,
+    );
+  }
+
+  return payload as T;
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'Something went wrong.';
+}
+
+export const api = {
+  me: () => request<User>('/api/auth/me'),
+  login: (username: string, password: string) =>
+    request<User>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  listCameras: () => request<Camera[]>('/api/cameras'),
+  createCamera: (name: string, url: string) =>
+    request<Camera>('/api/cameras', {
+      method: 'POST',
+      body: JSON.stringify({ name, url }),
+    }),
+  updateCamera: (id: string, name: string, url: string) =>
+    request<Camera>(`/api/cameras/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, url }),
+    }),
+  deleteCamera: (id: string) =>
+    request<void>(`/api/cameras/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  listUsers: () => request<User[]>('/api/users'),
+  createUser: (username: string, password: string, isAdmin: boolean) =>
+    request<User>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, isAdmin }),
+    }),
+  deleteUser: (id: string) =>
+    request<void>(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  resetPassword: (id: string, newPassword: string) =>
+    request<void>(`/api/users/${encodeURIComponent(id)}/password`, {
+      method: 'PUT',
+      body: JSON.stringify({ newPassword }),
+    }),
+};
