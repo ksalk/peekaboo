@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Peekaboo.Api.Cameras;
+using Peekaboo.Api.Streaming;
 
 namespace Peekaboo.Api.Endpoints;
 
@@ -47,8 +48,19 @@ public static class CameraEndpoints
         return camera is null ? Results.NotFound() : Results.Ok(camera);
     }
 
-    private static IResult DeleteCamera(string id, CameraService cameras) =>
-        cameras.Delete(id) ? Results.NoContent() : Results.NotFound();
+    private static async Task<IResult> DeleteCamera(
+        string id,
+        CameraService cameras,
+        StreamManager streams)
+    {
+        if (!cameras.Delete(id))
+        {
+            return Results.NotFound();
+        }
+
+        await streams.StopCameraAsync(id, "The camera was deleted.");
+        return Results.NoContent();
+    }
 
     private static IResult? Validate(CameraRequest request)
     {

@@ -8,6 +8,7 @@ using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
 using Peekaboo.Api.Security;
+using Peekaboo.Api.Streaming;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +19,10 @@ if (trustProxy)
 {
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
-        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor |
+            ForwardedHeaders.XForwardedProto |
+            ForwardedHeaders.XForwardedHost;
         // Only enable PEEKABOO_TRUST_PROXY when the app port is reachable exclusively
         // through the reverse proxy; otherwise clients could spoof these headers.
         options.KnownIPNetworks.Clear();
@@ -31,6 +35,9 @@ builder.Services.AddSingleton(new AppDatabase(databasePath));
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<CameraService>();
+builder.Services.AddSingleton(CameraCredentials.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton<StreamManager>();
 
 builder.Services.AddAuthentication(AuthConstants.Scheme)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(AuthConstants.Scheme, configureOptions: null);
@@ -80,11 +87,16 @@ if (trustProxy)
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(30),
+});
 
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapCameraEndpoints();
+app.MapStreamEndpoints();
 
 app.Run();
 

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 
 namespace Peekaboo.Tests.Api;
@@ -15,15 +16,25 @@ internal sealed class ApiTestHost : IDisposable
 
     private readonly WebApplicationFactory<Program> _factory;
 
-    public ApiTestHost()
+    public ApiTestHost(IReadOnlyDictionary<string, string?>? settings = null)
     {
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("PEEKABOO_DB_PATH", Path.Combine(_directory, "peekaboo.db"));
             builder.UseSetting("ADMIN_USERNAME", AdminUsername);
             builder.UseSetting("ADMIN_PASSWORD", AdminPassword);
+
+            if (settings is not null)
+            {
+                foreach (var (key, value) in settings)
+                {
+                    builder.UseSetting(key, value);
+                }
+            }
         });
     }
+
+    public TestServer Server => _factory.Server;
 
     public HttpClient CreateClient() => _factory.CreateClient();
 
