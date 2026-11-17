@@ -1,0 +1,46 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+mise.local.toml
+*.pem
+*.key
+*.pfx
+
+# SQLite databases and local data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+/data/
+
+# .NET
+**/bin/
+**/obj/
+*.user
+.vs/
+TestResults/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+backend/Peekaboo.Api/wwwroot/
+*.tsbuildinfo
+
+# End-to-end test artifacts
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+.tmp/
+
+# Logs
+*.log
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
