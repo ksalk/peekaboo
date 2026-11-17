@@ -14,9 +14,9 @@ if (explicitChromiumPath && !existsSync(explicitChromiumPath)) {
 
 const chromiumCandidates = [
   explicitChromiumPath,
-  '/usr/bin/chromium',
-  '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
 ].filter((candidate): candidate is string => Boolean(candidate));
 
 const executablePath = chromiumCandidates.find((candidate) => existsSync(candidate));
@@ -33,6 +33,7 @@ export default defineConfig({
   },
   reporter: [['list']],
   forbidOnly: true,
+  retries: process.env.CI ? 1 : 0,
   globalSetup: './global-setup.ts',
   use: {
     baseURL,

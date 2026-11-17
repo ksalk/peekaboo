@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: dotnet
+
+      - name: Build
+        run: dotnet build backend/Peekaboo.slnx --nologo
+
+      - name: Test
+        run: dotnet test backend/Peekaboo.slnx --nologo
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: node
+
+      - name: Cache npm
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'e2e/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+
+      - name: Lint
+        run: npm --prefix frontend run lint
+
+      - name: Type-check
+        run: npm --prefix frontend run check
+
+      - name: Build
+        run: npm --prefix frontend run build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+
+      - name: Ensure ffmpeg is available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+
+      - name: Select a browser
+        run: |
+          browser="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium)" || {
+            echo "No Chrome/Chromium found on the runner." >&2
+            exit 1
+          }
+          echo "PEEKABOO_CHROMIUM_PATH=$browser" >> "$GITHUB_ENV"
+          echo "Using $browser"
+
+      - name: Cache MediaMTX
+        id: mediamtx-cache
+        uses: actions/cache@v6
+        with:
+          path: e2e/.cache
+          key: mediamtx-${{ runner.os }}-${{ hashFiles('scripts/get-mediamtx.sh') }}
+
+      - name: Cache npm
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'e2e/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Install test dependencies
+        run: npm --prefix e2e ci
+
+      - name: Verify browser H.264 support
+        working-directory: e2e
+        run: |
+          node -e '
+          const { chromium } = require("playwright-core");
+          (async () => {
+            const browser = await chromium.launch({
+              executablePath: process.env.PEEKABOO_CHROMIUM_PATH,
+              args: ["--no-sandbox"],
+            });
+            const page = await browser.newPage();
+            const supported = await page.evaluate(() =>
+              MediaSource.isTypeSupported("video/mp4; codecs=\"avc1.64001f\""),
+            );
+            await browser.close();
+            if (!supported) {
+              console.error("Browser cannot decode H.264; streaming e2e tests would fail.");
+              process.exit(1);
+            }
+            console.log("H.264 MSE support verified");
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          '
+
+      - name: Type-check tests
+        run: npm --prefix e2e run check
+
+      - name: Run Playwright suite
+        run: ./scripts/e2e.sh
+
+      - name: Save MediaMTX cache
+        if: always() && steps.mediamtx-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: e2e/.cache
+          key: ${{ steps.mediamtx-cache.outputs.cache-primary-key }}
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts
+          path: e2e/test-results
+          retention-days: 7
