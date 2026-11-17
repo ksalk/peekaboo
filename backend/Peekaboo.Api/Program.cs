@@ -79,6 +79,43 @@ app.Services.GetRequiredService<AppDatabase>()
 app.Services.GetRequiredService<AuthService>()
     .SeedAdmin(builder.Configuration["ADMIN_USERNAME"], builder.Configuration["ADMIN_PASSWORD"]);
 
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Referrer-Policy"] = "no-referrer";
+    headers["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "script-src 'self'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "media-src 'self' blob:; " +
+        "connect-src 'self'; " +
+        "font-src 'self'; " +
+        "object-src 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'; " +
+        "frame-ancestors 'none'";
+    await next();
+});
+
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "no-cache";
+        }
+        else if (context.Context.Request.Path.StartsWithSegments("/assets"))
+        {
+            context.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        }
+    },
+});
+
 if (trustProxy)
 {
     app.UseForwardedHeaders();
@@ -97,6 +134,28 @@ app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapCameraEndpoints();
 app.MapStreamEndpoints();
+
+app.MapFallback((HttpContext context, IWebHostEnvironment environment) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        return Results.NotFound();
+    }
+
+    if (environment.WebRootPath is not { Length: > 0 } webRoot)
+    {
+        return Results.NotFound();
+    }
+
+    var indexPath = Path.Combine(webRoot, "index.html");
+    if (!File.Exists(indexPath))
+    {
+        return Results.NotFound();
+    }
+
+    context.Response.Headers.CacheControl = "no-cache";
+    return Results.File(indexPath, "text/html; charset=utf-8");
+}).AllowAnonymous();
 
 app.Run();
 

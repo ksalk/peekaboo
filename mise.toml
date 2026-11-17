@@ -64,3 +64,22 @@ description = "Run backend and end-to-end tests"
 depends = ["test:api"]
 run = "mise run e2e"
 
+[tasks."docker:build"]
+description = "Build the container image for PEEKABOO_REGISTRY"
+run = '''
+: "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
+image="${PEEKABOO_REGISTRY%/}/peekaboo:${PEEKABOO_TAG:-latest}"
+docker build --tag "$image" .
+echo "Built $image"
+'''
+
+[tasks."docker:publish"]
+description = "Push the container image to PEEKABOO_REGISTRY"
+depends = ["docker:build"]
+run = '''
+: "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
+image="${PEEKABOO_REGISTRY%/}/peekaboo:${PEEKABOO_TAG:-latest}"
+docker push "$image"
+echo "Published $image"
+'''
+

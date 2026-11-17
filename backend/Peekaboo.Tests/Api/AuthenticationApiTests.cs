@@ -20,6 +20,44 @@ public sealed class AuthenticationApiTests
     }
 
     [Fact]
+    public async Task Responses_include_security_headers()
+    {
+        using var host = new ApiTestHost();
+        using var client = host.CreateClient();
+
+        using var response = await client.GetAsync("/api/health");
+
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Contains(
+            "default-src 'self'",
+            response.Headers.GetValues("Content-Security-Policy").Single(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Unknown_api_routes_do_not_fall_back_to_the_spa()
+    {
+        using var host = new ApiTestHost();
+        using var client = host.CreateClient();
+
+        using var response = await client.GetAsync("/api/does-not-exist");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unknown_client_routes_return_not_found_without_a_web_root()
+    {
+        using var host = new ApiTestHost();
+        using var client = host.CreateClient();
+
+        using var response = await client.GetAsync("/some/deep/link");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Me_returns_unauthorized_without_session()
     {
         using var host = new ApiTestHost();

@@ -1,0 +1,6 @@
+# Copy this file to mise.local.toml (gitignored) and adjust the values.
+# Docker credentials stay in Docker's own credential store (`docker login`).
+
+[env]
+PEEKABOO_REGISTRY = "registry.example.com"
+PEEKABOO_TAG = "0.1.0"

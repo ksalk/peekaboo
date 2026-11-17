@@ -1,0 +1,35 @@
+name: peekaboo
+
+services:
+  peekaboo:
+    image: ${PEEKABOO_IMAGE:-peekaboo:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PEEKABOO_PORT:-8080}:8080"
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      CAMERA_USERNAME: ${CAMERA_USERNAME:-}
+      CAMERA_PASSWORD: ${CAMERA_PASSWORD:-}
+      PEEKABOO_DB_PATH: /data/peekaboo.db
+      PEEKABOO_MAX_STREAMS: ${PEEKABOO_MAX_STREAMS:-9}
+      PEEKABOO_MAX_VIEWERS_PER_STREAM: ${PEEKABOO_MAX_VIEWERS_PER_STREAM:-8}
+      PEEKABOO_RTSP_TRANSPORT: ${PEEKABOO_RTSP_TRANSPORT:-tcp}
+      PEEKABOO_TRUST_PROXY: ${PEEKABOO_TRUST_PROXY:-false}
+    volumes:
+      - peekaboo-data:/data
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  peekaboo-data:
