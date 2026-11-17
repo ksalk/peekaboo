@@ -1,3 +1,11 @@
 [tools]
 dotnet = "10.0.101"
 node = "26.12.1"
+
+[tasks."build:api"]
+description = "Build the backend and test projects"
+run = "dotnet build backend/Peekaboo.slnx --nologo"
+
+[tasks."test:api"]
+description = "Run backend tests"
+run = "dotnet test backend/Peekaboo.slnx --nologo"

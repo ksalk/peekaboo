@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Peekaboo.Api/Peekaboo.Api.csproj" />
+  <Project Path="Peekaboo.Tests/Peekaboo.Tests.csproj" />
+</Solution>
