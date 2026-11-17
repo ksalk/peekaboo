@@ -2,15 +2,16 @@
   import { onMount } from 'svelte';
   import { auth } from './lib/auth.svelte';
   import LoginView from './lib/views/LoginView.svelte';
+  import FeedsView from './lib/views/FeedsView.svelte';
   import ConfigView from './lib/views/ConfigView.svelte';
   import UsersView from './lib/views/UsersView.svelte';
   import AccountView from './lib/views/AccountView.svelte';
 
-  type Route = 'config' | 'users' | 'account';
+  type Route = 'feeds' | 'config' | 'users' | 'account';
 
   function readRoute(): Route {
     const value = window.location.hash.replace(/^#\/?/, '');
-    return value === 'users' || value === 'account' ? value : 'config';
+    return value === 'config' || value === 'users' || value === 'account' ? value : 'feeds';
   }
 
   let route = $state<Route>(readRoute());
@@ -29,7 +30,7 @@
 
   $effect(() => {
     if (auth.user && route === 'users' && !auth.user.isAdmin) {
-      window.location.hash = '#/config';
+      window.location.hash = '#/feeds';
     }
   });
 
@@ -37,7 +38,7 @@
     loggingOut = true;
     try {
       await auth.logout();
-      window.location.hash = '#/config';
+      window.location.hash = '#/feeds';
     } catch (cause) {
       console.error(cause);
     } finally {
@@ -56,12 +57,13 @@
 {:else}
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="#/config">
+      <a class="brand" href="#/feeds">
         <span class="brand-dot" aria-hidden="true"></span>
         Peekaboo
       </a>
 
       <nav class="main-nav" aria-label="Main navigation">
+        <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
         <a href="#/config" class:active={route === 'config'}>Cameras</a>
         {#if auth.user.isAdmin}
           <a href="#/users" class:active={route === 'users'}>Users</a>
@@ -80,10 +82,12 @@
     <main class="content">
       {#if route === 'users' && auth.user.isAdmin}
         <UsersView />
+      {:else if route === 'config'}
+        <ConfigView />
       {:else if route === 'account'}
         <AccountView />
       {:else}
-        <ConfigView />
+        <FeedsView />
       {/if}
     </main>
   </div>

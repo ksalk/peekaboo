@@ -542,7 +542,304 @@ input[type='checkbox'] {
   }
 }
 
+/* Feeds ------------------------------------------------------------------ */
+
+.feed-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.layout-picker {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.layout-picker button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.layout-picker button:hover {
+  color: var(--text);
+}
+
+.layout-picker button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.feed-hint-line {
+  margin-top: -0.35rem;
+}
+
+.feed-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.feed-grid.layout-1x1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.feed-grid.layout-2x2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.feed-grid.layout-3x3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.feed-cell {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #05080c;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.feed-cell.live {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.feed-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.feed-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.feed-toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: linear-gradient(to bottom, rgba(3, 6, 10, 0.85), rgba(3, 6, 10, 0));
+  pointer-events: none;
+}
+
+.feed-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.feed-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.feed-actions .button {
+  pointer-events: auto;
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #d6f9ec;
+  background: rgba(6, 20, 15, 0.65);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+}
+
+.feed-center {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 2.5rem 1rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+button.feed-center {
+  pointer-events: auto;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.feed-center:hover .feed-hint {
+  color: var(--text);
+}
+
+.feed-hint {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #b6c2d0;
+  transition: color 120ms ease;
+}
+
+.feed-subhint {
+  max-width: 34ch;
+  max-height: 6em;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.feed-plus {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  border: 1px dashed var(--border-strong);
+  color: var(--accent);
+  font-size: 1.35rem;
+  line-height: 1;
+  margin-bottom: 0.15rem;
+}
+
+.feed-cell:hover .feed-plus {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.feed-error .feed-hint {
+  color: var(--danger);
+}
+
+/* Camera picker modal ---------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(2, 5, 9, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  width: min(100%, 460px);
+  max-height: min(82vh, 640px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 1.35rem;
+  box-shadow: var(--shadow);
+}
+
+.modal:focus {
+  outline: none;
+}
+
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.picker-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  color: var(--text);
+  font: inherit;
+  padding: 0.65rem 0.8rem;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.picker-option:hover {
+  border-color: var(--border-strong);
+  background: #232d3c;
+}
+
+.picker-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.picker-option .url {
+  max-width: 100%;
+}
+
+.picker-actions {
+  justify-content: flex-end;
+}
+
 /* Responsive ------------------------------------------------------------- */
+
+@media (max-width: 800px) {
+  .feed-grid.layout-2x2,
+  .feed-grid.layout-3x3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 @media (max-width: 760px) {
   .topbar {
