@@ -35,6 +35,8 @@ playwright-report/
 test-results/
 blob-report/
 playwright/.auth/
+e2e/.auth/
+e2e/.cache/
 .tmp/
 
 # Logs

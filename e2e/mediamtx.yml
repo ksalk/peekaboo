@@ -1,0 +1,29 @@
+logLevel: info
+logDestinations: [stdout]
+
+api: false
+metrics: false
+pprof: false
+playback: false
+
+rtsp: true
+rtspAddress: :8555
+rtspTransports: [tcp]
+
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+moq: false
+
+authMethod: internal
+authInternalUsers:
+  - user: camuser
+    pass: campassword
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+
+paths:
+  all_others:

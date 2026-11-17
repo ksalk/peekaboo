@@ -33,6 +33,20 @@ description = "Lint the frontend"
 depends = ["setup:web"]
 run = "npm --prefix frontend run lint"
 
+[tasks."setup:e2e"]
+description = "Install end-to-end test dependencies"
+run = "npm --prefix e2e ci"
+
+[tasks."check:e2e"]
+description = "Type-check the end-to-end tests"
+depends = ["setup:e2e"]
+run = "npm --prefix e2e run check"
+
+[tasks.e2e]
+description = "Run Playwright end-to-end tests with local RTSP feeds"
+depends = ["setup:web", "setup:e2e"]
+run = "./scripts/e2e.sh"
+
 [tasks.dev]
 description = "Run backend and frontend in development mode"
 run = "./scripts/dev.sh"
@@ -42,10 +56,11 @@ description = "Build backend and frontend"
 depends = ["build:api", "build:web"]
 
 [tasks.lint]
-description = "Lint everything"
-depends = ["lint:web"]
+description = "Lint and type-check everything"
+depends = ["lint:web", "check:web", "check:e2e"]
 
 [tasks.test]
-description = "Run backend tests"
+description = "Run backend and end-to-end tests"
 depends = ["test:api"]
+run = "mise run e2e"
 
