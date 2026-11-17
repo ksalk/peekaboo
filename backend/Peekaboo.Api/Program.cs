@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Peekaboo.Api.Auth;
+using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
 using Peekaboo.Api.Security;
@@ -29,6 +30,7 @@ var databasePath = builder.Configuration["PEEKABOO_DB_PATH"] ?? "data/peekaboo.d
 builder.Services.AddSingleton(new AppDatabase(databasePath));
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton<CameraService>();
 
 builder.Services.AddAuthentication(AuthConstants.Scheme)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(AuthConstants.Scheme, configureOptions: null);
@@ -82,6 +84,7 @@ app.UseAuthorization();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
+app.MapCameraEndpoints();
 
 app.Run();
 

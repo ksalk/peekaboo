@@ -7,3 +7,5 @@ public sealed record CreateUserRequest(string? Username, string? Password, bool 
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 public sealed record ResetPasswordRequest(string? NewPassword);
+
+public sealed record CameraRequest(string? Name, string? Url);
