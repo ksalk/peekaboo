@@ -9,6 +9,8 @@
 
   const layouts = [
     { id: '1x1', label: '1 × 1', cells: 1 },
+    { id: '1x2', label: '1 × 2', cells: 2 },
+    { id: '2x1', label: '2 × 1', cells: 2 },
     { id: '2x2', label: '2 × 2', cells: 4 },
     { id: '3x3', label: '3 × 3', cells: 9 },
   ] as const;
@@ -133,7 +135,7 @@
   function readLayout(): LayoutId {
     try {
       const stored = localStorage.getItem(LAYOUT_KEY);
-      return stored === '2x2' || stored === '3x3' ? stored : '1x1';
+      return layouts.find((item) => item.id === stored)?.id ?? '1x1';
     } catch {
       return '1x1';
     }
