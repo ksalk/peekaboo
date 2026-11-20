@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 root_dir="$PWD"
+isapi_port=8666
 
 for tool in dotnet node npm ffmpeg curl tar ps; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -11,7 +12,7 @@ for tool in dotnet node npm ffmpeg curl tar ps; do
   fi
 done
 
-for port in 5080 5173 8555; do
+for port in 5080 5173 8555 "$isapi_port"; do
   if (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
     echo "Port ${port} is already in use. Stop 'mise dev' (or other services) first." >&2
     exit 1
@@ -24,16 +25,18 @@ api_pid=""
 feed1_pid=""
 feed2_pid=""
 feed3_pid=""
+playback_feed_pid=""
+fake_isapi_pid=""
 mtx_pid=""
 
 cleanup() {
-  for pid in "$web_pid" "$api_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
+  for pid in "$web_pid" "$api_pid" "$playback_feed_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$fake_isapi_pid" "$mtx_pid"; do
     if [ -n "$pid" ]; then
       kill -TERM -- "-$pid" 2>/dev/null || true
     fi
   done
 
-  for pid in "$web_pid" "$api_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
+  for pid in "$web_pid" "$api_pid" "$playback_feed_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$fake_isapi_pid" "$mtx_pid"; do
     if [ -n "$pid" ]; then
       wait "$pid" 2>/dev/null || true
     fi
@@ -86,7 +89,7 @@ wait_for_feed() {
 
 dump_feed_logs() {
   local log
-  for log in "$temp_dir"/feed*.log; do
+  for log in "$temp_dir"/feed*.log "$temp_dir"/playback-feed.log; do
     [ -f "$log" ] || continue
     echo "--- $(basename "$log") ---" >&2
     tail -20 "$log" >&2 || true
@@ -132,10 +135,13 @@ start_feed "ISAPI/Streaming/channels/102" 120 "$temp_dir/feed2.log" 320 180
 feed2_pid="$last_pid"
 start_feed "ISAPI/Streaming/channels/201" 240 "$temp_dir/feed3.log" 640 360
 feed3_pid="$last_pid"
+start_feed "ISAPI/Streaming/tracks/101" 300 "$temp_dir/playback-feed.log" 640 360
+playback_feed_pid="$last_pid"
 
 if ! wait_for_feed "ISAPI/Streaming/channels/101" ||
    ! wait_for_feed "ISAPI/Streaming/channels/102" ||
-   ! wait_for_feed "ISAPI/Streaming/channels/201"; then
+   ! wait_for_feed "ISAPI/Streaming/channels/201" ||
+   ! wait_for_feed "ISAPI/Streaming/tracks/101"; then
   echo "Test RTSP feeds did not come online." >&2
   tail -20 "$temp_dir/mediamtx.log" >&2 || true
   dump_feed_logs
@@ -152,11 +158,25 @@ fi
 
 dotnet build backend/Peekaboo.slnx --nologo
 
+CAMERA_USERNAME="camuser" \
+CAMERA_PASSWORD="campassword" \
+PEEKABOO_FAKE_ISAPI_PORT="$isapi_port" \
+node "$root_dir/e2e/fake-isapi.mjs" \
+  >"$temp_dir/isapi.log" 2>&1 &
+fake_isapi_pid=$!
+
+if ! wait_for_port "$isapi_port"; then
+  echo "Fake NVR ISAPI server did not start." >&2
+  tail -30 "$temp_dir/isapi.log" >&2 || true
+  exit 1
+fi
+
 PEEKABOO_DB_PATH="$temp_dir/peekaboo.db" \
 ADMIN_USERNAME="admin" \
 ADMIN_PASSWORD="peekaboo-e2e-password" \
 CAMERA_USERNAME="camuser" \
 CAMERA_PASSWORD="campassword" \
+PEEKABOO_ISAPI_HTTP_PORT="$isapi_port" \
 ASPNETCORE_ENVIRONMENT="Development" \
 ASPNETCORE_URLS="http://127.0.0.1:5080" \
 dotnet run --no-build --project backend/Peekaboo.Api --no-launch-profile \
@@ -192,6 +212,8 @@ if [ "$status" -ne 0 ]; then
   tail -40 "$temp_dir/api.log" >&2 || true
   echo "--- mediamtx.log ---" >&2
   tail -40 "$temp_dir/mediamtx.log" >&2 || true
+  echo "--- isapi.log ---" >&2
+  tail -40 "$temp_dir/isapi.log" >&2 || true
   echo "--- web.log ---" >&2
   tail -20 "$temp_dir/web.log" >&2 || true
   echo "--- feed logs ---" >&2

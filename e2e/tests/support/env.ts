@@ -12,6 +12,7 @@ export const feeds = {
   sub: { streamId: '102', path: 'ISAPI/Streaming/channels/102' },
   second: { streamId: '201', path: 'ISAPI/Streaming/channels/201' },
   missing: { streamId: '999', path: 'ISAPI/Streaming/channels/999' },
+  playback: { path: 'ISAPI/Streaming/tracks/101' },
 } as const;
 
 let sequence = 0;

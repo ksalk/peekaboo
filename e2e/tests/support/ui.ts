@@ -10,6 +10,11 @@ export async function openFeeds(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
 }
 
+export async function openPlayback(page: Page): Promise<void> {
+  await page.goto('/#/playback');
+  await expect(page.getByRole('heading', { name: 'Playback', exact: true })).toBeVisible();
+}
+
 export async function openNvrs(page: Page): Promise<void> {
   await page.goto('/#/config');
   await expect(page.getByRole('heading', { name: 'NVRs', exact: true })).toBeVisible();
