@@ -1,7 +1,7 @@
 # Security policy
 
-Peekaboo is a self-hosted application that exposes live camera feeds. Please treat
-security reports responsibly.
+Peekaboo is a self-hosted application that exposes live NVR camera feeds. Please
+treat security reports responsibly.
 
 ## Reporting a vulnerability
 
@@ -31,21 +31,23 @@ hardening:
 - Serve it over HTTPS behind a reverse proxy.
 - Set `PEEKABOO_TRUST_PROXY=true` only when the app port is unreachable except
   through that proxy.
-- Use a long, unique `ADMIN_PASSWORD` and a dedicated camera account.
-- Keep the SQLite data volume private; it contains password hashes and camera URLs.
+- Use a long, unique `ADMIN_PASSWORD` and a dedicated NVR account.
+- Keep the SQLite data volume private; it contains password hashes, NVR base URLs and
+  camera names/IDs.
 - Publish the container port only to the reverse proxy or your LAN.
 - Do not run untrusted code or grant accounts to people you would not give camera
   access to.
 
 ## Known non-issues
 
-- **Camera credentials are visible in the ffmpeg process arguments.** This is how
+- **NVR credentials are visible in the ffmpeg process arguments.** This is how
   RTSP authentication is passed to ffmpeg. Credentials are injected only at stream
   start and never stored in the database, browser, or logs. Anyone who can inspect
   container processes already has code execution inside the container, which is
   equivalent to full control of Peekaboo.
 - **The health endpoint is unauthenticated.** It returns only `{"status":"ok"}` and
   is intended for container orchestration checks.
-- **Users may add arbitrary `rtsp://`/`rtsps://` camera URLs.** This is inherent to a
-  viewer configured by authenticated users. Do not give accounts to untrusted
-  people.
+- **Users may add arbitrary `rtsp://`/`rtsps://` NVR base URLs.** This is inherent to a
+  viewer configured by authenticated users. Base URLs are host-only and reject
+  embedded credentials, but they can still point at internal hosts. Do not give
+  accounts to untrusted people.

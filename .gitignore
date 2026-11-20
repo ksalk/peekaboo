@@ -1,3 +1,6 @@
+# Local vendor documentation
+/isapi.pdf
+
 # Secrets and local configuration
 .env
 .env.*
