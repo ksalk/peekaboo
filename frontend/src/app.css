@@ -752,6 +752,43 @@ input[type='checkbox'] {
   flex-shrink: 0;
 }
 
+.stream-toggle {
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: rgba(6, 12, 20, 0.72);
+  pointer-events: auto;
+}
+
+.stream-toggle button {
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.stream-toggle button:hover {
+  color: var(--text);
+}
+
+.stream-toggle button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .feed-actions .button {
   pointer-events: auto;
 }

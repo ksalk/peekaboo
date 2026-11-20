@@ -13,6 +13,8 @@ export interface Nvr {
   updatedAt: string;
 }
 
+export type CameraStream = 'main' | 'sub';
+
 export interface Camera {
   id: string;
   nvrId: string;

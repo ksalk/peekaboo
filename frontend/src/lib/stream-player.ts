@@ -1,3 +1,5 @@
+import type { CameraStream } from './types';
+
 interface StreamPlayerCallbacks {
   onPlaying: () => void;
   onError: (message: string) => void;
@@ -47,7 +49,7 @@ export class StreamPlayer {
     private readonly callbacks: StreamPlayerCallbacks,
   ) {}
 
-  start(cameraId: string): void {
+  start(cameraId: string, stream: CameraStream): void {
     this.stopped = false;
     this.failed = false;
     this.video.muted = true;
@@ -61,7 +63,8 @@ export class StreamPlayer {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(
-      `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/stream`,
+      `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/stream` +
+        `?stream=${encodeURIComponent(stream)}`,
     );
     socket.binaryType = 'arraybuffer';
 

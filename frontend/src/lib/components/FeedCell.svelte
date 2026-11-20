@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { StreamPlayer } from '../stream-player';
-  import type { Camera } from '../types';
+  import type { Camera, CameraStream } from '../types';
 
   let {
     camera,
@@ -19,6 +19,7 @@
   let player: StreamPlayer | null = null;
   let activeCameraId: string | null = null;
   let seenStopSignal = 0;
+  let stream = $state<CameraStream>('sub');
 
   $effect(() => {
     if (stopSignal !== seenStopSignal) {
@@ -75,7 +76,20 @@
     });
 
     player = instance;
-    instance.start(camera.id);
+    instance.start(camera.id, stream);
+  }
+
+  function selectStream(next: CameraStream) {
+    if (stream === next) {
+      return;
+    }
+
+    const wasActive = status === 'connecting' || status === 'playing';
+    stream = next;
+
+    if (wasActive) {
+      start();
+    }
   }
 
   function stop() {
@@ -102,6 +116,31 @@
         <span class="feed-name" title={camera.name}>{camera.name}</span>
 
         <div class="feed-actions">
+          <div
+            class="stream-toggle"
+            role="group"
+            aria-label={`${camera.name} stream quality`}
+          >
+            <button
+              type="button"
+              class:active={stream === 'sub'}
+              aria-pressed={stream === 'sub'}
+              title="Substream"
+              onclick={() => selectStream('sub')}
+            >
+              Sub
+            </button>
+            <button
+              type="button"
+              class:active={stream === 'main'}
+              aria-pressed={stream === 'main'}
+              title="Main stream"
+              onclick={() => selectStream('main')}
+            >
+              Main
+            </button>
+          </div>
+
           {#if status === 'playing'}
             <span class="live-badge"><span class="live-dot" aria-hidden="true"></span>Live</span>
           {/if}
