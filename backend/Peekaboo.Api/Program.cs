@@ -42,6 +42,7 @@ builder.Services.AddSingleton(CameraCredentials.FromConfiguration(builder.Config
 builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
+builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<StreamManager>();
 
