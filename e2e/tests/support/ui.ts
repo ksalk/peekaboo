@@ -10,6 +10,32 @@ export async function openFeeds(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
 }
 
+export async function openNvrs(page: Page): Promise<void> {
+  await page.goto('/#/config');
+  await expect(page.getByRole('heading', { name: 'NVRs', exact: true })).toBeVisible();
+}
+
+export async function selectStream(
+  page: Page,
+  cellIndex: number,
+  stream: 'main' | 'sub',
+): Promise<void> {
+  await feedCell(page, cellIndex)
+    .locator('.stream-toggle')
+    .getByRole('button', { name: stream === 'main' ? 'Main' : 'Sub', exact: true })
+    .click();
+}
+
+export function acceptDialogs(
+  page: Page,
+  onMessage?: (message: string) => void,
+): void {
+  page.on('dialog', (dialog) => {
+    onMessage?.(dialog.message());
+    void dialog.accept();
+  });
+}
+
 export async function selectLayout(page: Page, label: '1 × 1' | '2 × 2' | '3 × 3'): Promise<void> {
   await page.getByRole('button', { name: label, exact: true }).click();
 }

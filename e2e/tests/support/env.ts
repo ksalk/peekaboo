@@ -5,7 +5,14 @@ export const adminPassword =
 
 export const rtspPort = 8555;
 
-export const feedUrl = (path: string): string => `rtsp://127.0.0.1:${rtspPort}/${path}`;
+export const nvrBaseUrl = `rtsp://127.0.0.1:${rtspPort}`;
+
+export const feeds = {
+  main: { streamId: '101', path: 'ISAPI/Streaming/channels/101' },
+  sub: { streamId: '102', path: 'ISAPI/Streaming/channels/102' },
+  second: { streamId: '201', path: 'ISAPI/Streaming/channels/201' },
+  missing: { streamId: '999', path: 'ISAPI/Streaming/channels/999' },
+} as const;
 
 let sequence = 0;
 

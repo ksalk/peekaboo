@@ -23,16 +23,17 @@ web_pid=""
 api_pid=""
 feed1_pid=""
 feed2_pid=""
+feed3_pid=""
 mtx_pid=""
 
 cleanup() {
-  for pid in "$web_pid" "$api_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
+  for pid in "$web_pid" "$api_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
     if [ -n "$pid" ]; then
       kill -TERM -- "-$pid" 2>/dev/null || true
     fi
   done
 
-  for pid in "$web_pid" "$api_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
+  for pid in "$web_pid" "$api_pid" "$feed3_pid" "$feed2_pid" "$feed1_pid" "$mtx_pid"; do
     if [ -n "$pid" ]; then
       wait "$pid" 2>/dev/null || true
     fi
@@ -83,13 +84,24 @@ wait_for_feed() {
   return 1
 }
 
+dump_feed_logs() {
+  local log
+  for log in "$temp_dir"/feed*.log; do
+    [ -f "$log" ] || continue
+    echo "--- $(basename "$log") ---" >&2
+    tail -20 "$log" >&2 || true
+  done
+}
+
 start_feed() {
   local path="$1"
   local hue="$2"
   local log="$3"
+  local width="${4:-640}"
+  local height="${5:-360}"
 
-  ffmpeg -hide_banner -loglevel error -re \
-    -f lavfi -i "testsrc2=size=640x360:rate=15" \
+  ffmpeg -hide_banner -loglevel warning -re \
+    -f lavfi -i "testsrc2=size=${width}x${height}:rate=15" \
     -vf "hue=h=${hue}" \
     -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -pix_fmt yuv420p \
     -rtsp_transport tcp -f rtsp \
@@ -114,14 +126,19 @@ if ! wait_for_port 8555; then
   exit 1
 fi
 
-start_feed feed1 0 "$temp_dir/feed1.log"
+start_feed "ISAPI/Streaming/channels/101" 0 "$temp_dir/feed1.log" 640 360
 feed1_pid="$last_pid"
-start_feed feed2 120 "$temp_dir/feed2.log"
+start_feed "ISAPI/Streaming/channels/102" 120 "$temp_dir/feed2.log" 320 180
 feed2_pid="$last_pid"
+start_feed "ISAPI/Streaming/channels/201" 240 "$temp_dir/feed3.log" 640 360
+feed3_pid="$last_pid"
 
-if ! wait_for_feed feed1 || ! wait_for_feed feed2; then
+if ! wait_for_feed "ISAPI/Streaming/channels/101" ||
+   ! wait_for_feed "ISAPI/Streaming/channels/102" ||
+   ! wait_for_feed "ISAPI/Streaming/channels/201"; then
   echo "Test RTSP feeds did not come online." >&2
   tail -20 "$temp_dir/mediamtx.log" >&2 || true
+  dump_feed_logs
   exit 1
 fi
 
@@ -177,6 +194,10 @@ if [ "$status" -ne 0 ]; then
   tail -40 "$temp_dir/mediamtx.log" >&2 || true
   echo "--- web.log ---" >&2
   tail -20 "$temp_dir/web.log" >&2 || true
+  echo "--- feed logs ---" >&2
+  dump_feed_logs
+  mkdir -p e2e/test-results
+  cp "$temp_dir"/*.log e2e/test-results/ 2>/dev/null || true
 fi
 
 exit "$status"
