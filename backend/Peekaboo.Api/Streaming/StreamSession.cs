@@ -17,6 +17,8 @@ internal sealed class StreamSession
 
     private readonly string _safeUrl;
     private readonly string _streamUrl;
+    private readonly TimeSpan? _maximumDuration;
+    private readonly bool _isPlayback;
     private readonly StreamOptions _options;
     private readonly CameraCredentials _credentials;
     private readonly ILogger _logger;
@@ -35,12 +37,15 @@ internal sealed class StreamSession
     private int _started;
     private int _stopping;
     private int _failureReported;
+    private int _ended;
     private string? _failureMessage;
     private long _lastDataTimestamp;
 
     public StreamSession(
         StreamKey key,
         string cameraUrl,
+        TimeSpan? maximumDuration,
+        bool isPlayback,
         StreamOptions options,
         CameraCredentials credentials,
         ILogger logger,
@@ -49,6 +54,8 @@ internal sealed class StreamSession
         Key = key;
         _safeUrl = cameraUrl;
         _streamUrl = credentials.Resolve(cameraUrl);
+        _maximumDuration = maximumDuration;
+        _isPlayback = isPlayback;
         _options = options;
         _credentials = credentials;
         _logger = logger;
@@ -165,6 +172,11 @@ internal sealed class StreamSession
             await RejectAsync(socket, "Timed out waiting for the camera stream.", cancellationToken);
             return;
         }
+        catch (StreamEndedException)
+        {
+            await SendEndedAsync(socket, cancellationToken);
+            return;
+        }
         catch (StreamStartException exception)
         {
             await RejectAsync(socket, exception.Message, cancellationToken);
@@ -248,24 +260,36 @@ internal sealed class StreamSession
         _onTerminated(this);
     }
 
-    private string[] BuildArguments() =>
-    [
-        "-hide_banner",
-        "-loglevel", "error",
-        "-rtsp_transport", _options.RtspTransport,
-        "-analyzeduration", "1000000",
-        "-probesize", "1000000",
-        "-i", _streamUrl,
-        "-map", "0:v:0",
-        "-an",
-        "-sn",
-        "-dn",
-        "-c:v", "copy",
-        "-f", "mp4",
-        "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-        "-flush_packets", "1",
-        "pipe:1",
-    ];
+    private string[] BuildArguments()
+    {
+        var durationArguments = _maximumDuration is { } duration
+            ? new[]
+            {
+                "-t",
+                duration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+            }
+            : [];
+
+        return
+        [
+            "-hide_banner",
+            "-loglevel", "error",
+            "-rtsp_transport", _options.RtspTransport,
+            "-analyzeduration", "1000000",
+            "-probesize", "1000000",
+            "-i", _streamUrl,
+            "-map", "0:v:0",
+            "-an",
+            "-sn",
+            "-dn",
+            .. durationArguments,
+            "-c:v", "copy",
+            "-f", "mp4",
+            "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+            "-flush_packets", "1",
+            "pipe:1",
+        ];
+    }
 
     private async Task ReadOutputAsync(Process process)
     {
@@ -300,7 +324,9 @@ internal sealed class StreamSession
                     if (codec is null)
                     {
                         ReportFailure(
-                            "The camera stream is not H.264. Use the camera's H.264 substream.");
+                            _isPlayback
+                                ? "The recording is not H.264. Peekaboo can only play H.264 recordings."
+                                : "The camera stream is not H.264. Use the camera's H.264 substream.");
                         KillProcess();
                         break;
                     }
@@ -375,15 +401,20 @@ internal sealed class StreamSession
         {
             while (await timer.WaitForNextTickAsync(_cts.Token))
             {
+                var idleTimeout = _isPlayback
+                    ? TimeSpan.FromMinutes(2)
+                    : _options.IdleTimeout;
+
                 var idle = Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastDataTimestamp));
-                if (idle <= _options.IdleTimeout)
+                if (idle <= idleTimeout)
                 {
                     continue;
                 }
 
+                var source = _isPlayback ? "recording" : "camera";
                 ReportFailure(
-                    $"No video data received from the camera for " +
-                    $"{_options.IdleTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} seconds.");
+                    $"No video data received from the {source} for " +
+                    $"{idleTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} seconds.");
                 KillProcess();
                 return;
             }
@@ -404,9 +435,9 @@ internal sealed class StreamSession
             {
                 EnqueueReady(subscriber, info);
             }
-        }
 
-        _ready.TrySetResult(info);
+            _ready.TrySetResult(info);
+        }
     }
 
     private void Broadcast(Fmp4Box box)
@@ -490,6 +521,18 @@ internal sealed class StreamSession
                             "Stream stopped",
                             cancellationToken);
                         return;
+
+                    case StreamMessageKind.Ended:
+                        await StreamWebSocket.SendJsonAsync(
+                            socket,
+                            new { type = "ended" },
+                            cancellationToken);
+                        await StreamWebSocket.CloseOutputAsync(
+                            socket,
+                            WebSocketCloseStatus.NormalClosure,
+                            "Playback ended",
+                            cancellationToken);
+                        return;
                 }
             }
 
@@ -544,6 +587,30 @@ internal sealed class StreamSession
                     return;
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (WebSocketException)
+        {
+        }
+    }
+
+    private static async Task SendEndedAsync(
+        WebSocket socket,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await StreamWebSocket.SendJsonAsync(
+                socket,
+                new { type = "ended" },
+                cancellationToken);
+            await StreamWebSocket.CloseOutputAsync(
+                socket,
+                WebSocketCloseStatus.NormalClosure,
+                "Playback ended",
+                cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -609,6 +676,12 @@ internal sealed class StreamSession
         {
         }
 
+        if (_isPlayback && exitCode == 0)
+        {
+            ReportEnded();
+            return;
+        }
+
         var detail = LastStderrDetail();
         var message = exitCode is null or 0
             ? "Camera stream ended."
@@ -636,9 +709,35 @@ internal sealed class StreamSession
         }
     }
 
+    private void ReportEnded()
+    {
+        if (Interlocked.Exchange(ref _ended, 1) != 0)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _failureReported, 1);
+        _cts.Cancel();
+        _logger.LogInformation("Playback ended for {StreamKey}", Key);
+
+        lock (_subscriberGate)
+        {
+            foreach (var subscriber in _subscribers.Values)
+            {
+                subscriber.Messages.Writer.TryWrite(StreamMessage.Ended());
+                subscriber.Messages.Writer.TryComplete();
+            }
+
+            _ready.TrySetException(new StreamEndedException());
+        }
+
+        _onTerminated(this);
+    }
+
     private void ReportFailure(string message)
     {
-        if (Interlocked.Exchange(ref _failureReported, 1) != 0)
+        if (Volatile.Read(ref _ended) != 0 ||
+            Interlocked.Exchange(ref _failureReported, 1) != 0)
         {
             return;
         }
@@ -654,9 +753,10 @@ internal sealed class StreamSession
                 subscriber.Messages.Writer.TryWrite(StreamMessage.Error(safeMessage));
                 subscriber.Messages.Writer.TryComplete();
             }
+
+            _ready.TrySetException(new StreamStartException(safeMessage));
         }
 
-        _ready.TrySetException(new StreamStartException(safeMessage));
         _onTerminated(this);
     }
 

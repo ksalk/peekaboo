@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
 using Xunit;
 
 namespace Peekaboo.Tests.Api;
@@ -27,6 +28,15 @@ public sealed class StreamApiTests : IDisposable
             exec sleep 300
             """);
         File.WriteAllText(
+            FiniteScriptPath,
+            $"""
+            #!/bin/sh
+            echo "$$" >> "{StartLogPath}"
+            printf '%s\n' "$*" >> "{ArgsLogPath}"
+            cat "{SamplePath}"
+            exit 0
+            """);
+        File.WriteAllText(
             FailScriptPath,
             """
             #!/bin/sh
@@ -37,6 +47,7 @@ public sealed class StreamApiTests : IDisposable
         if (!OperatingSystem.IsWindows())
         {
             MakeExecutable(ScriptPath);
+            MakeExecutable(FiniteScriptPath);
             MakeExecutable(FailScriptPath);
         }
     }
@@ -48,6 +59,8 @@ public sealed class StreamApiTests : IDisposable
     private string ArgsLogPath => Path.Combine(_directory, "args.log");
 
     private string ScriptPath => Path.Combine(_directory, "fake-ffmpeg.sh");
+
+    private string FiniteScriptPath => Path.Combine(_directory, "finite-ffmpeg.sh");
 
     private string FailScriptPath => Path.Combine(_directory, "fail-ffmpeg.sh");
 
@@ -434,6 +447,166 @@ public sealed class StreamApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Recorded_segment_stream_ends_cleanly_and_caps_the_duration()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(scriptPath: FiniteScriptPath);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var socket = await ConnectPlaybackAsync(
+            host,
+            cameraId,
+            cookie,
+            "2026-11-20T10:00:00Z",
+            "2026-11-20T10:30:00Z");
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+        Assert.Equal("moof", await ReceiveBoxAsync(socket));
+        Assert.Equal("mdat", await ReceiveBoxAsync(socket));
+
+        var ended = await ReceiveTextMessageAsync(socket);
+        Assert.Contains("\"type\":\"ended\"", ended, StringComparison.Ordinal);
+
+        using var closeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var close = await socket.ReceiveAsync(new byte[1024], closeTimeout.Token);
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        Assert.Equal(WebSocketCloseStatus.NormalClosure, close.CloseStatus);
+
+        var arguments = await WaitForArgsAsync();
+        Assert.Contains("-t 1800", arguments, StringComparison.Ordinal);
+        Assert.Contains("starttime=20261120T100000Z", arguments, StringComparison.Ordinal);
+        Assert.Contains("endtime=20261120T103000Z", arguments, StringComparison.Ordinal);
+
+        var pid = await WaitForStartedProcessAsync();
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Playback_failure_is_reported_as_an_error_not_ended()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(scriptPath: FailScriptPath);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var socket = await ConnectPlaybackAsync(
+            host,
+            cameraId,
+            cookie,
+            "2026-11-20T10:00:00Z",
+            "2026-11-20T10:30:00Z");
+
+        var message = await ReceiveTextMessageAsync(socket);
+        Assert.Contains("\"type\":\"error\"", message, StringComparison.Ordinal);
+        Assert.Contains("exit code 1", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"type\":\"ended\"", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Playback_viewers_with_the_same_range_share_one_process()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var first = await ConnectPlaybackAsync(
+            host,
+            cameraId,
+            cookie,
+            "2026-11-20T10:00:00Z",
+            "2026-11-20T10:30:00Z");
+        using var second = await ConnectPlaybackAsync(
+            host,
+            cameraId,
+            cookie,
+            "2026-11-20T10:00:00Z",
+            "2026-11-20T10:30:00Z");
+
+        await ReceiveReadyAsync(first);
+        await ReceiveBinaryAsync(first);
+        await ReceiveReadyAsync(second);
+        await ReceiveBinaryAsync(second);
+
+        var pid = await WaitForStartedProcessAsync();
+        Assert.Single(await ReadStartLogAsync());
+
+        await CloseQuietlyAsync(first);
+        await Task.Delay(200);
+        Assert.True(ProcessAlive(pid), "one remaining viewer must keep the playback alive");
+
+        await CloseQuietlyAsync(second);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Playback_counts_toward_the_stream_limit()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(maxStreams: 1);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var live = await ConnectAsync(host, cameraId, cookie);
+        await ReceiveReadyAsync(live);
+        await ReceiveBinaryAsync(live);
+
+        using var playback = await ConnectPlaybackAsync(
+            host,
+            cameraId,
+            cookie,
+            "2026-11-20T10:00:00Z",
+            "2026-11-20T10:30:00Z");
+
+        var message = await ReceiveTextMessageAsync(playback);
+        Assert.Contains("Stream limit", message, StringComparison.OrdinalIgnoreCase);
+
+        await CloseQuietlyAsync(live);
+        await WaitForAllProcessesGoneAsync();
+    }
+
+    [Fact]
+    public async Task Recorded_segment_stream_rejects_invalid_ranges_and_cameras()
+    {
+        using var host = CreateHost();
+        var (client, _, cameraId, _) = await SetupCameraAsync(host);
+
+        using var invalidRange = await client.GetAsync(
+            $"/api/cameras/{cameraId}/recordings/stream" +
+            "?start=2026-11-20T10:00:00Z&end=2026-11-20T10:00:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, invalidRange.StatusCode);
+
+        using var tooLong = await client.GetAsync(
+            $"/api/cameras/{cameraId}/recordings/stream" +
+            "?start=2026-11-01T00:00:00Z&end=2026-11-02T01:00:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+
+        using var missingCamera = await client.GetAsync(
+            "/api/cameras/missing/recordings/stream" +
+            "?start=2026-11-20T10:00:00Z&end=2026-11-20T10:30:00Z");
+        Assert.Equal(HttpStatusCode.NotFound, missingCamera.StatusCode);
+
+        using var notAWebSocket = await client.GetAsync(
+            $"/api/cameras/{cameraId}/recordings/stream" +
+            "?start=2026-11-20T10:00:00Z&end=2026-11-20T10:30:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, notAWebSocket.StatusCode);
+    }
+
+    [Fact]
     public async Task Credentials_are_not_stored_or_returned()
     {
         using var host = CreateHost(withCredentials: true);
@@ -517,6 +690,32 @@ public sealed class StreamApiTests : IDisposable
         string cookie,
         string? stream = null)
     {
+        var client = CreateWebSocketClient(host, cookie);
+        var query = stream is null ? string.Empty : $"?stream={Uri.EscapeDataString(stream)}";
+
+        return await client.ConnectAsync(
+            new Uri($"ws://localhost/api/cameras/{cameraId}/stream{query}"),
+            CancellationToken.None);
+    }
+
+    private static async Task<WebSocket> ConnectPlaybackAsync(
+        ApiTestHost host,
+        string cameraId,
+        string cookie,
+        string start,
+        string end)
+    {
+        var client = CreateWebSocketClient(host, cookie);
+
+        return await client.ConnectAsync(
+            new Uri(
+                $"ws://localhost/api/cameras/{cameraId}/recordings/stream" +
+                $"?start={Uri.EscapeDataString(start)}&end={Uri.EscapeDataString(end)}"),
+            CancellationToken.None);
+    }
+
+    private static WebSocketClient CreateWebSocketClient(ApiTestHost host, string cookie)
+    {
         var client = host.Server.CreateWebSocketClient();
         client.ConfigureRequest = request =>
         {
@@ -524,11 +723,7 @@ public sealed class StreamApiTests : IDisposable
             request.Headers["Origin"] = "http://localhost";
         };
 
-        var query = stream is null ? string.Empty : $"?stream={Uri.EscapeDataString(stream)}";
-
-        return await client.ConnectAsync(
-            new Uri($"ws://localhost/api/cameras/{cameraId}/stream{query}"),
-            CancellationToken.None);
+        return client;
     }
 
     private static async Task<string> ReceiveReadyAsync(WebSocket socket)

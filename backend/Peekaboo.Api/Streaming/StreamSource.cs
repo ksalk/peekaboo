@@ -4,7 +4,10 @@ namespace Peekaboo.Api.Streaming;
 /// The resolved upstream URL for one stream session. The URL never contains
 /// credentials; <see cref="StreamSession"/> injects them when ffmpeg starts.
 /// </summary>
-public sealed record StreamSource(string Url);
+public sealed record StreamSource(
+    string Url,
+    TimeSpan? MaximumDuration = null,
+    bool IsPlayback = false);
 
 /// <summary>
 /// Canonical stream-kind values used in <see cref="StreamKey"/>. Keys are compared
@@ -14,4 +17,5 @@ public static class StreamKinds
 {
     public const string Main = "main";
     public const string Sub = "sub";
+    public const string PlaybackPrefix = "playback:";
 }

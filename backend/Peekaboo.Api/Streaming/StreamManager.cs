@@ -5,8 +5,8 @@ namespace Peekaboo.Api.Streaming;
 
 /// <summary>
 /// Identifies a stream session. <see cref="Kind"/> must be one of the canonical
-/// <see cref="StreamKinds"/> values (or a future playback kind); keys are compared
-/// by exact string equality so sharing and the stream limit stay consistent.
+/// <see cref="StreamKinds"/> values (or a playback kind); keys are compared by
+/// exact string equality so sharing and the stream limit stay consistent.
 /// </summary>
 public readonly record struct StreamKey(string CameraId, string Kind)
 {
@@ -14,6 +14,14 @@ public readonly record struct StreamKey(string CameraId, string Kind)
         new(
             cameraId,
             stream == CameraStream.Main ? StreamKinds.Main : StreamKinds.Sub);
+
+    public static StreamKey Playback(
+        string cameraId,
+        DateTimeOffset start,
+        DateTimeOffset end) =>
+        new(
+            cameraId,
+            $"{StreamKinds.PlaybackPrefix}{start.UtcTicks}-{end.UtcTicks}");
 
     public override string ToString() => string.Concat(CameraId, ":", Kind);
 }
@@ -61,6 +69,8 @@ public sealed class StreamManager(
                     session = new StreamSession(
                         key,
                         source.Url,
+                        source.MaximumDuration,
+                        source.IsPlayback,
                         options,
                         credentials,
                         logger,

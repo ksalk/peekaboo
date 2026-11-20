@@ -1,5 +1,7 @@
+using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Playback;
+using Peekaboo.Api.Streaming;
 
 namespace Peekaboo.Api.Endpoints;
 
@@ -10,7 +12,67 @@ public static class PlaybackEndpoints
         app.MapGet("/api/cameras/{id}/recordings", HandleRecordingsAsync)
             .RequireAuthorization();
 
+        app.MapGet("/api/cameras/{id}/recordings/stream", HandleRecordingStreamAsync)
+            .RequireAuthorization();
+
         return app;
+    }
+
+    private static async Task HandleRecordingStreamAsync(
+        string id,
+        string? start,
+        string? end,
+        HttpContext context,
+        CameraService cameras,
+        PlaybackService playbacks,
+        StreamManager streams,
+        CancellationToken cancellationToken)
+    {
+        if (!StreamOrigin.IsAllowed(
+                context.Request.Headers.Origin.ToString(),
+                context.Request.Host))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (!PlaybackTimeRange.TryParse(start, end, out var from, out var to, out var rangeError))
+        {
+            await Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: rangeError).ExecuteAsync(context);
+            return;
+        }
+
+        if (to - from > PlaybackTimeRange.MaximumPlaybackDuration)
+        {
+            await Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: $"A recording playback can span at most " +
+                       $"{PlaybackTimeRange.MaximumPlaybackHours} hours.").ExecuteAsync(context);
+            return;
+        }
+
+        if (cameras.GetPlaybackSource(id) is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!context.WebSockets.IsWebSocketRequest)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("WebSocket upgrade required.");
+            return;
+        }
+
+        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+
+        await streams.RunAsync(
+            StreamKey.Playback(id, from, to),
+            () => playbacks.GetStreamSource(id, from, to),
+            socket,
+            cancellationToken);
     }
 
     private static async Task<IResult> HandleRecordingsAsync(

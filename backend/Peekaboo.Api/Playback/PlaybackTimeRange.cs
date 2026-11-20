@@ -5,6 +5,9 @@ namespace Peekaboo.Api.Playback;
 public static class PlaybackTimeRange
 {
     public const int MaximumDays = 31;
+    public const int MaximumPlaybackHours = 24;
+    public static readonly TimeSpan MaximumPlaybackDuration =
+        TimeSpan.FromHours(MaximumPlaybackHours);
 
     private static readonly string[] IsoFormats =
     [

@@ -69,6 +69,8 @@ public sealed class StreamSessionTests : IDisposable
         return new StreamSession(
             StreamKey.Live("camera", CameraStream.Sub),
             "rtsp://fake.local/stream",
+            maximumDuration: null,
+            isPlayback: false,
             options,
             credentials,
             NullLogger.Instance,

@@ -12,6 +12,7 @@ internal enum StreamMessageKind
     Init,
     Data,
     Error,
+    Ended,
 }
 
 internal readonly record struct StreamMessage(
@@ -26,11 +27,15 @@ internal readonly record struct StreamMessage(
     public static StreamMessage Data(byte[] data) => new(StreamMessageKind.Data, Payload: data);
 
     public static StreamMessage Error(string message) => new(StreamMessageKind.Error, Text: message);
+
+    public static StreamMessage Ended() => new(StreamMessageKind.Ended);
 }
 
 internal sealed class SlowConsumerException : Exception;
 
 internal sealed class StreamStartException(string message) : Exception(message);
+
+internal sealed class StreamEndedException : Exception;
 
 internal sealed class StreamSubscriber
 {

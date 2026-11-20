@@ -1,10 +1,32 @@
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Streaming;
 
 namespace Peekaboo.Api.Playback;
 
 public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
 {
+    public StreamSource? GetStreamSource(
+        string cameraId,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        var source = cameras.GetPlaybackSource(cameraId);
+        if (source is null)
+        {
+            return null;
+        }
+
+        return new StreamSource(
+            IsapiPlaybackUrl.Build(
+                source.RtspBaseUrl,
+                source.MainStreamId,
+                start,
+                end),
+            MaximumDuration: end - start,
+            IsPlayback: true);
+    }
+
     public async Task<RecordingSearchDto?> SearchAsync(
         string cameraId,
         DateTimeOffset start,
