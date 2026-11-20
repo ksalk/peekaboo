@@ -18,7 +18,7 @@ test('manages NVRs and their cameras', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
   await page.getByLabel('Name', { exact: true }).fill(nvrName);
-  await page.getByLabel('RTSP base URL', { exact: true }).fill(submittedBaseUrl);
+  await page.getByLabel('NVR address', { exact: true }).fill(submittedBaseUrl);
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
 
   const nvrCard = page.locator('.nvr-card').filter({ hasText: nvrName });
@@ -73,21 +73,21 @@ test('manages NVRs and their cameras', async ({ page }) => {
   await expect(page.getByRole('heading', { name: renamedCamera, exact: true })).toHaveCount(0);
 });
 
-test('rejects non-RTSP and credential-bearing NVR base URLs', async ({ page }) => {
+test('rejects HTTP and credential-bearing NVR addresses', async ({ page }) => {
   const nvrName = uniqueName('Bad NVR');
 
   await openNvrs(page);
 
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
   await page.getByLabel('Name', { exact: true }).fill(nvrName);
-  await page.getByLabel('RTSP base URL', { exact: true }).fill('http://example.test');
+  await page.getByLabel('NVR address', { exact: true }).fill('http://example.test');
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
 
   await expect(page.getByRole('alert')).toContainText('rtsp');
   await expect(page.getByRole('heading', { name: nvrName, exact: true })).toHaveCount(0);
 
   await page
-    .getByLabel('RTSP base URL', { exact: true })
+    .getByLabel('NVR address', { exact: true })
     .fill(`rtsp://user:password@127.0.0.1:${rtspPort}`);
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
 

@@ -1,4 +1,5 @@
 using Peekaboo.Api.Cameras;
+using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Streaming;
 
@@ -48,7 +49,8 @@ public static class NvrEndpoints
         NvrRequest request,
         NvrService nvrs,
         CameraService cameras,
-        StreamManager streams)
+        StreamManager streams,
+        IsapiEndpointResolver isapiEndpoints)
     {
         var validation = ValidateNvr(request);
         if (validation is not null)
@@ -74,6 +76,9 @@ public static class NvrEndpoints
 
         if (!string.Equals(existing.BaseUrl, updated.BaseUrl, StringComparison.Ordinal))
         {
+            isapiEndpoints.Invalidate(id, existing.BaseUrl);
+            isapiEndpoints.Invalidate(id, updated.BaseUrl);
+
             var cameraIds = cameras.ListCameraIdsForNvr(id);
             await streams.StopCamerasAsync(cameraIds, "The NVR configuration was updated.");
         }
@@ -84,12 +89,19 @@ public static class NvrEndpoints
     private static async Task<IResult> DeleteNvr(
         string id,
         NvrService nvrs,
-        StreamManager streams)
+        StreamManager streams,
+        IsapiEndpointResolver isapiEndpoints)
     {
+        var existing = nvrs.Get(id);
         var cameraIds = nvrs.Delete(id);
         if (cameraIds is null)
         {
             return Results.NotFound();
+        }
+
+        if (existing is not null)
+        {
+            isapiEndpoints.Invalidate(id, existing.BaseUrl);
         }
 
         await streams.StopCamerasAsync(cameraIds, "The NVR was deleted.");

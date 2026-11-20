@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Peekaboo.Api.Streaming;
 
 /// <summary>
@@ -17,6 +19,9 @@ public sealed class CameraCredentials
     }
 
     public bool HasCredentials => _username is not null;
+
+    public NetworkCredential? CreateCredential() =>
+        _username is null ? null : new NetworkCredential(_username, _password);
 
     public static CameraCredentials FromConfiguration(IConfiguration configuration)
     {

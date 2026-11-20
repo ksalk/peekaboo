@@ -148,8 +148,19 @@ public sealed class CameraApiTests
         Assert.Equal("Viewer NVR", camera.NvrName);
     }
 
+    [Fact]
+    public async Task Nvr_address_accepts_bare_hosts_and_normalizes_them()
+    {
+        using var host = new ApiTestHost();
+        using var client = await host.CreateAdminClientAsync();
+
+        var nvr = await CreateNvrAsync(client, "Bare NVR", "  192.168.1.65  ");
+
+        Assert.Equal("rtsp://192.168.1.65:554", nvr.BaseUrl);
+    }
+
     [Theory]
-    [InlineData("House NVR", "http://192.168.1.64", "scheme")]
+    [InlineData("House NVR", "http://192.168.1.64", "rtsp")]
     [InlineData("House NVR", "rtsp://user:password@192.168.1.64:554", "credentials")]
     [InlineData("House NVR", "rtsp://192.168.1.64:554/stream", "path")]
     [InlineData("House NVR", "not a url", "absolute")]

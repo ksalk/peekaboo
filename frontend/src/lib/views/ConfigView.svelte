@@ -267,7 +267,7 @@
 
   <div class="callout">
     NVR usernames and passwords are injected from <code>CAMERA_USERNAME</code> and
-    <code>CAMERA_PASSWORD</code> on the server. Never put credentials in the base URL.
+    <code>CAMERA_PASSWORD</code> on the server. Never put credentials in the NVR address.
   </div>
 
   {#if error}
@@ -284,11 +284,11 @@
       </label>
 
       <label>
-        RTSP base URL
+        NVR address
         <input
           bind:value={nvrForm.baseUrl}
           maxlength="2048"
-          placeholder="rtsp://192.168.1.64:554"
+          placeholder="192.168.1.64"
           spellcheck="false"
           autocapitalize="none"
           required
@@ -296,7 +296,10 @@
       </label>
 
       <p class="hint">
-        Use the NVR's RTSP address, not its web UI URL. Peekaboo appends
+        Enter the NVR's IP address or hostname. Live video uses RTSP port 554 unless you
+        specify another port; recording search finds the web/ISAPI service on HTTP port
+        80 or HTTPS port 443. Explicit <code>rtsp://</code> and <code>rtsps://</code>
+        URLs are also accepted. Peekaboo appends
         <code>/ISAPI/Streaming/channels/&lt;id&gt;</code>.
       </p>
 

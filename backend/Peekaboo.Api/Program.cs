@@ -7,6 +7,7 @@ using Peekaboo.Api.Auth;
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
+using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Security;
 using Peekaboo.Api.Streaming;
@@ -38,6 +39,9 @@ builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<NvrService>();
 builder.Services.AddSingleton<CameraService>();
 builder.Services.AddSingleton(CameraCredentials.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton<IsapiHttpClient>();
+builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<StreamManager>();
 

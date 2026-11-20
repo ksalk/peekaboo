@@ -94,7 +94,12 @@ public sealed class NvrServiceTests : IDisposable
     [InlineData("rtsp://192.168.1.64:554", null)]
     [InlineData("rtsps://nvr.local:322", null)]
     [InlineData("RTSP://nvr.local", null)]
-    [InlineData("http://nvr.local", "scheme")]
+    [InlineData("192.168.1.64", null)]
+    [InlineData("nvr.local", null)]
+    [InlineData("nvr.local:8554", null)]
+    [InlineData("[::1]", null)]
+    [InlineData("http://nvr.local", "rtsp")]
+    [InlineData("https://nvr.local", "rtsp")]
     [InlineData("rtsp://user:password@nvr.local:554", "credentials")]
     [InlineData("rtsp://nvr.local:554/stream", "path")]
     [InlineData("rtsp://nvr.local:0", "port")]
@@ -138,6 +143,17 @@ public sealed class NvrServiceTests : IDisposable
         Assert.Equal(
             "rtsp://[::1]:554",
             NvrValidation.NormalizeBaseUrl("rtsp://[::1]:554/"));
+        Assert.Equal(
+            "rtsp://192.168.1.64:554",
+            NvrValidation.NormalizeBaseUrl("  192.168.1.64  "));
+        Assert.Equal(
+            "rtsp://nvr.local:8554",
+            NvrValidation.NormalizeBaseUrl("nvr.local:8554"));
+        Assert.Equal(
+            "rtsp://[::1]:554",
+            NvrValidation.NormalizeBaseUrl(" [::1] "));
+        Assert.Throws<ArgumentException>(
+            () => NvrValidation.NormalizeBaseUrl("nvr.local:0"));
     }
 
     public void Dispose()
