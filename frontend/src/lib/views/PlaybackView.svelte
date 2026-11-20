@@ -1,0 +1,632 @@
+<script lang="ts">
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { SvelteDate, SvelteMap } from 'svelte/reactivity';
+  import { api, errorMessage } from '../api';
+  import { StreamPlayer } from '../stream-player';
+  import type { Camera, RecordingSearchResult, RecordingSegment } from '../types';
+
+  type PlayerStatus = 'idle' | 'connecting' | 'playing' | 'ended' | 'error';
+
+  const CAMERA_KEY = 'peekaboo.playback.camera';
+
+  let cameras = $state<Camera[]>([]);
+  let camerasLoading = $state(true);
+  let loadError = $state<string | null>(null);
+  let cameraId = $state('');
+  let date = $state(formatDateInput(new Date()));
+  let startTime = $state('00:00:00');
+  let endTime = $state('23:59:59');
+  let searching = $state(false);
+  let searchError = $state<string | null>(null);
+  let result = $state<RecordingSearchResult | null>(null);
+  let selectedSegment = $state<RecordingSegment | null>(null);
+  let playerStatus = $state<PlayerStatus>('idle');
+  let playerError = $state('');
+  let copyState = $state<{ key: string; status: 'copied' | 'failed' } | null>(null);
+  let videoElement = $state<HTMLVideoElement>();
+  let playerCard = $state<HTMLElement>();
+  let cameraSelect = $state<HTMLSelectElement>();
+  let player: StreamPlayer | null = null;
+  let searchController: AbortController | null = null;
+  let copyTimer: number | null = null;
+  let playRequest = 0;
+
+  const canSearch = $derived(!searching && cameraId !== '' && !camerasLoading);
+  const groups = $derived(groupRecordings(result?.recordings ?? []));
+  const totalDuration = $derived(
+    (result?.recordings ?? []).reduce(
+      (sum, segment) => sum + segment.durationSeconds,
+      0,
+    ),
+  );
+
+  onMount(() => {
+    void loadCameras();
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (copyTimer !== null) {
+        window.clearTimeout(copyTimer);
+      }
+    };
+  });
+
+  onDestroy(() => {
+    searchController?.abort();
+    stopPlayback();
+  });
+
+  async function loadCameras() {
+    camerasLoading = true;
+    loadError = null;
+
+    try {
+      cameras = await api.listCameras();
+      const stored = readStoredCamera();
+      cameraId = cameras.some((camera) => camera.id === stored)
+        ? stored!
+        : (cameras[0]?.id ?? '');
+    } catch (cause) {
+      loadError = errorMessage(cause);
+    } finally {
+      camerasLoading = false;
+    }
+  }
+
+  function readStoredCamera(): string | null {
+    try {
+      return localStorage.getItem(CAMERA_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  function storeCamera(id: string) {
+    try {
+      localStorage.setItem(CAMERA_KEY, id);
+    } catch {
+      // Local storage can be unavailable in private or restricted contexts.
+    }
+  }
+
+  function handleCameraChange(event: Event) {
+    const next = (event.currentTarget as HTMLSelectElement).value;
+    if (next !== cameraId) {
+      cameraId = next;
+    }
+
+    if (!cameraId) {
+      return;
+    }
+
+    storeCamera(cameraId);
+    resetResults();
+  }
+
+  function handleVisibility() {
+    if (document.hidden) {
+      stopPlayback();
+    }
+  }
+
+  function resetResults() {
+    searchController?.abort();
+    searchController = null;
+    searching = false;
+    stopPlayback();
+    result = null;
+    searchError = null;
+    copyState = null;
+  }
+
+  function setQuickDay(offsetDays: number) {
+    const day = new SvelteDate();
+    day.setDate(day.getDate() + offsetDays);
+    date = formatDateInput(day);
+    startTime = '00:00:00';
+    endTime = '23:59:59';
+    resetResults();
+  }
+
+  async function search() {
+    if (!canSearch) {
+      return;
+    }
+
+    const start = parseLocalDateTime(date, startTime);
+    let end = parseLocalDateTime(date, endTime);
+
+    if (start === null || end === null) {
+      searchError =
+        'Choose a valid date and time range. The selected local time may not exist on that date.';
+      return;
+    }
+
+    if (endTime === '23:59:59') {
+      const exclusiveEnd = new SvelteDate(end.getTime());
+      exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+      exclusiveEnd.setHours(0, 0, 0, 0);
+      end = exclusiveEnd;
+    }
+
+    if (end.getTime() <= start.getTime()) {
+      searchError = 'End time must be after start time.';
+      return;
+    }
+
+    stopPlayback();
+    result = null;
+    searchError = null;
+    copyState = null;
+    searching = true;
+
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
+
+    try {
+      const response = await api.listRecordings(
+        cameraId,
+        start.toISOString(),
+        end.toISOString(),
+        controller.signal,
+      );
+
+      if (!controller.signal.aborted) {
+        result = response;
+      }
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        searchError = errorMessage(cause);
+      }
+    } finally {
+      if (searchController === controller) {
+        searchController = null;
+        searching = false;
+      }
+    }
+  }
+
+  async function play(segment: RecordingSegment) {
+    if (!cameraId) {
+      return;
+    }
+
+    stopPlayback();
+    const request = ++playRequest;
+    selectedSegment = segment;
+    playerStatus = 'connecting';
+    playerError = '';
+    await tick();
+
+    if (request !== playRequest || !videoElement) {
+      if (request === playRequest) {
+        playerStatus = 'error';
+        playerError = 'The video player is not available.';
+      }
+
+      return;
+    }
+
+    playerCard?.focus();
+
+    const instance = new StreamPlayer(videoElement, {
+      onPlaying: () => {
+        if (player === instance) {
+          playerStatus = 'playing';
+        }
+      },
+      onError: (message) => {
+        if (player === instance) {
+          playerStatus = 'error';
+          playerError = message;
+        }
+      },
+      onEnded: () => {
+        if (player === instance) {
+          playerStatus = 'ended';
+        }
+      },
+    });
+
+    player = instance;
+    instance.startPlayback(cameraId, segment.start, segment.end);
+  }
+
+  function stopPlayback() {
+    playRequest += 1;
+    player?.stop();
+    player = null;
+    selectedSegment = null;
+    playerStatus = 'idle';
+    playerError = '';
+  }
+
+  function closePlayer() {
+    stopPlayback();
+    cameraSelect?.focus();
+  }
+
+  async function copyUrl(segment: RecordingSegment) {
+    const key = segmentKey(segment);
+
+    try {
+      await writeClipboard(segment.playbackUrl);
+      showCopyState(key, 'copied');
+    } catch {
+      showCopyState(key, 'failed');
+    }
+  }
+
+  async function writeClipboard(value: string) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    const restoreFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+
+    try {
+      textarea.focus();
+      textarea.select();
+
+      if (!document.execCommand('copy')) {
+        throw new Error('Clipboard copy failed.');
+      }
+    } finally {
+      textarea.remove();
+      restoreFocus?.focus();
+    }
+  }
+
+  function showCopyState(key: string, status: 'copied' | 'failed') {
+    copyState = { key, status };
+
+    if (copyTimer !== null) {
+      window.clearTimeout(copyTimer);
+    }
+
+    copyTimer = window.setTimeout(() => {
+      copyState = null;
+      copyTimer = null;
+    }, 2000);
+  }
+
+  function segmentKey(segment: RecordingSegment): string {
+    return `${segment.start}|${segment.end}`;
+  }
+
+  function isSelected(segment: RecordingSegment): boolean {
+    return selectedSegment !== null && segmentKey(selectedSegment) === segmentKey(segment);
+  }
+
+  function formatDateInput(value: Date): string {
+    const pad = (part: number) => part.toString().padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+
+  function parseLocalDateTime(dateValue: string, timeValue: string): Date | null {
+    const dateParts = dateValue.split('-').map(Number);
+    const timeParts = timeValue.split(':').map(Number);
+
+    if (dateParts.length !== 3 || timeParts.length < 2) {
+      return null;
+    }
+
+    const [year, month, day] = dateParts;
+    const [hours, minutes, seconds = 0] = timeParts;
+
+    if (
+      year === undefined ||
+      month === undefined ||
+      day === undefined ||
+      hours === undefined ||
+      minutes === undefined ||
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      !Number.isInteger(day) ||
+      !Number.isInteger(hours) ||
+      !Number.isInteger(minutes) ||
+      !Number.isInteger(seconds)
+    ) {
+      return null;
+    }
+
+    const value = new Date(year, month - 1, day, hours, minutes, seconds, 0);
+
+    if (
+      Number.isNaN(value.getTime()) ||
+      value.getFullYear() !== year ||
+      value.getMonth() !== month - 1 ||
+      value.getDate() !== day ||
+      value.getHours() !== hours ||
+      value.getMinutes() !== minutes ||
+      value.getSeconds() !== seconds
+    ) {
+      return null;
+    }
+
+    return value;
+  }
+
+  function formatTime(iso: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(new Date(iso));
+  }
+
+  function formatDateLong(iso: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(new Date(iso));
+  }
+
+  function formatDuration(seconds: number): string {
+    const total = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const remainder = total % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+    }
+
+    if (minutes > 0) {
+      return `${minutes}m ${remainder.toString().padStart(2, '0')}s`;
+    }
+
+    return `${remainder}s`;
+  }
+
+  function dayKey(value: Date): string {
+    return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
+  }
+
+  function groupLabel(key: string, iso: string): string {
+    const today = new SvelteDate();
+    const yesterday = new SvelteDate();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (key === dayKey(today)) {
+      return 'Today';
+    }
+
+    if (key === dayKey(yesterday)) {
+      return 'Yesterday';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(new Date(iso));
+  }
+
+  function groupRecordings(
+    recordings: RecordingSegment[],
+  ): { key: string; label: string; items: RecordingSegment[] }[] {
+    const grouped = new SvelteMap<string, RecordingSegment[]>();
+
+    for (const segment of recordings) {
+      const key = dayKey(new Date(segment.start));
+      const items = grouped.get(key);
+      if (items) {
+        items.push(segment);
+      } else {
+        grouped.set(key, [segment]);
+      }
+    }
+
+    return [...grouped.entries()].map(([key, items]) => ({
+      key,
+      label: groupLabel(key, items[0]!.start),
+      items,
+    }));
+  }
+</script>
+
+<section class="page">
+  <div class="page-header">
+    <div>
+      <h1>Playback</h1>
+      <p class="muted">Search recordings on the NVR and watch them only while they are open.</p>
+    </div>
+  </div>
+
+  {#if loadError}
+    <div class="alert" role="alert">{loadError}</div>
+  {/if}
+
+  {#if camerasLoading}
+    <p class="muted">Loading cameras…</p>
+  {:else if cameras.length === 0}
+    <div class="empty-state">
+      <h2>No cameras configured</h2>
+      <p>Add an NVR and its cameras first, then come back to search their recordings.</p>
+      <a class="button primary" href="#/config">Add NVRs</a>
+    </div>
+  {:else}
+    <form
+      class="card playback-filters"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void search();
+      }}
+    >
+      <label>
+        Camera
+        <select bind:this={cameraSelect} bind:value={cameraId} onchange={handleCameraChange}>
+          {#each cameras as camera (camera.id)}
+            <option value={camera.id}>{camera.nvrName} · {camera.name}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label>
+        Date
+        <input type="date" bind:value={date} onchange={resetResults} required />
+      </label>
+
+      <label>
+        From
+        <input type="time" step="1" bind:value={startTime} onchange={resetResults} required />
+      </label>
+
+      <label>
+        To
+        <input type="time" step="1" bind:value={endTime} onchange={resetResults} required />
+      </label>
+
+      <div class="playback-filter-actions">
+        <button class="button small ghost" type="button" onclick={() => setQuickDay(0)}>
+          Today
+        </button>
+        <button class="button small ghost" type="button" onclick={() => setQuickDay(-1)}>
+          Yesterday
+        </button>
+        <button class="button primary" type="submit" disabled={!canSearch}>
+          {searching ? 'Searching…' : 'Search recordings'}
+        </button>
+      </div>
+    </form>
+
+    {#if searchError}
+      <div class="alert" role="alert">{searchError}</div>
+    {/if}
+
+    {#if selectedSegment}
+      <article class="card playback-player" bind:this={playerCard} tabindex="-1">
+        <header class="playback-player-header">
+          <div>
+            <h2>{result?.cameraName ?? cameras.find((camera) => camera.id === cameraId)?.name}</h2>
+            <p class="muted">
+              {formatDateLong(selectedSegment.start)} ·
+              {formatTime(selectedSegment.start)} – {formatTime(selectedSegment.end)}
+            </p>
+          </div>
+
+          <div class="actions">
+            {#if playerStatus === 'ended'}
+              <button
+                class="button small"
+                onclick={() => {
+                  if (selectedSegment) {
+                    void play(selectedSegment);
+                  }
+                }}
+              >
+                Play again
+              </button>
+            {/if}
+            <button class="button small ghost" onclick={closePlayer}>Close</button>
+          </div>
+        </header>
+
+        <div class="playback-video-wrap" aria-live="polite">
+          <video
+            bind:this={videoElement}
+            class="playback-video"
+            muted
+            playsinline
+            aria-label="Recording playback"
+          ></video>
+
+          {#if playerStatus === 'connecting'}
+            <div class="playback-overlay">
+              <span class="spinner" aria-hidden="true"></span>
+              <span>Starting playback…</span>
+            </div>
+          {:else if playerStatus === 'error'}
+            <div class="playback-overlay error">
+              <span>Playback failed</span>
+              <span class="playback-overlay-detail">{playerError}</span>
+            </div>
+          {:else if playerStatus === 'ended'}
+            <div class="playback-overlay">
+              <span>Playback ended</span>
+            </div>
+          {/if}
+        </div>
+      </article>
+    {/if}
+
+    {#if result}
+      <div class="playback-summary">
+        <p>
+          <strong>{result.recordings.length}</strong>
+          recording{result.recordings.length === 1 ? '' : 's'} ·
+          {formatDuration(totalDuration)} total
+        </p>
+        {#if result.truncated}
+          <p class="hint">
+            Showing a limited number of segments. Narrow the time range to see everything.
+          </p>
+        {/if}
+      </div>
+
+      {#if result.recordings.length === 0}
+        <div class="empty-state">
+          <h2>No recordings found</h2>
+          <p>Try another date or a wider time range.</p>
+        </div>
+      {:else}
+        {#each groups as group (group.key)}
+          <section class="recording-group">
+            <h2>{group.label}</h2>
+
+            <div class="recording-list">
+              {#each group.items as segment (segmentKey(segment))}
+                {@const active = isSelected(segment)}
+                {@const busy =
+                  active && (playerStatus === 'connecting' || playerStatus === 'playing')}
+                <article class="recording-row" class:active>
+                  <div class="recording-time">
+                    <strong>{formatTime(segment.start)} – {formatTime(segment.end)}</strong>
+                    <span class="muted">{formatDuration(segment.durationSeconds)}</span>
+                  </div>
+
+                  <div class="recording-meta">
+                    <span class="badge accent">{segment.codecType ?? 'video'}</span>
+                    <code class="url" title={segment.playbackUrl}>{segment.playbackUrl}</code>
+                  </div>
+
+                  <div class="recording-actions">
+                    <button class="button small" onclick={() => void copyUrl(segment)}>
+                      {copyState?.key === segmentKey(segment)
+                        ? copyState.status === 'copied'
+                          ? 'Copied'
+                          : 'Copy failed'
+                        : 'Copy URL'}
+                    </button>
+                    <button
+                      class="button small primary"
+                      disabled={busy}
+                      onclick={() => void play(segment)}
+                    >
+                      {busy ? 'Playing…' : active ? 'Play again' : 'Play'}
+                    </button>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          </section>
+        {/each}
+      {/if}
+    {/if}
+  {/if}
+</section>

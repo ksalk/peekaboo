@@ -1,4 +1,4 @@
-import type { Camera, Nvr, User } from './types';
+import type { Camera, Nvr, RecordingSearchResult, User } from './types';
 
 interface ProblemDetails {
   title?: string;
@@ -109,6 +109,13 @@ export const api = {
     request<void>(
       `/api/nvrs/${encodeURIComponent(nvrId)}/cameras/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
+    ),
+
+  listRecordings: (cameraId: string, start: string, end: string, signal?: AbortSignal) =>
+    request<RecordingSearchResult>(
+      `/api/cameras/${encodeURIComponent(cameraId)}/recordings` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      { signal },
     ),
 
   listUsers: () => request<User[]>('/api/users'),

@@ -3,15 +3,18 @@
   import { auth } from './lib/auth.svelte';
   import LoginView from './lib/views/LoginView.svelte';
   import FeedsView from './lib/views/FeedsView.svelte';
+  import PlaybackView from './lib/views/PlaybackView.svelte';
   import ConfigView from './lib/views/ConfigView.svelte';
   import UsersView from './lib/views/UsersView.svelte';
   import AccountView from './lib/views/AccountView.svelte';
 
-  type Route = 'feeds' | 'config' | 'users' | 'account';
+  type Route = 'feeds' | 'playback' | 'config' | 'users' | 'account';
 
   function readRoute(): Route {
     const value = window.location.hash.replace(/^#\/?/, '');
-    return value === 'config' || value === 'users' || value === 'account' ? value : 'feeds';
+    return value === 'playback' || value === 'config' || value === 'users' || value === 'account'
+      ? value
+      : 'feeds';
   }
 
   let route = $state<Route>(readRoute());
@@ -64,6 +67,7 @@
 
       <nav class="main-nav" aria-label="Main navigation">
         <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
+        <a href="#/playback" class:active={route === 'playback'}>Playback</a>
         <a href="#/config" class:active={route === 'config'}>NVRs</a>
         {#if auth.user.isAdmin}
           <a href="#/users" class:active={route === 'users'}>Users</a>
@@ -82,6 +86,8 @@
     <main class="content">
       {#if route === 'users' && auth.user.isAdmin}
         <UsersView />
+      {:else if route === 'playback'}
+        <PlaybackView />
       {:else if route === 'config'}
         <ConfigView />
       {:else if route === 'account'}

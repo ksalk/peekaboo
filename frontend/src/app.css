@@ -306,6 +306,9 @@ label.checkbox {
 input[type='text'],
 input[type='password'],
 input[type='search'],
+input[type='date'],
+input[type='time'],
+select,
 input:not([type]) {
   width: 100%;
   padding: 0.65rem 0.8rem;
@@ -953,6 +956,199 @@ button.feed-center:hover .feed-hint {
 
 .picker-actions {
   justify-content: flex-end;
+}
+
+/* Playback --------------------------------------------------------------- */
+
+.playback-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.8fr) repeat(3, minmax(140px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.playback-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.playback-filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.playback-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.playback-summary strong {
+  color: var(--text);
+}
+
+.playback-player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.playback-player-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.playback-player-header h2 {
+  font-size: 1.05rem;
+}
+
+.playback-player-header p {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.playback-video-wrap {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.playback-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.playback-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.playback-overlay.error {
+  color: #ffd0d6;
+}
+
+.playback-overlay-detail {
+  max-width: 42rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.recording-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.recording-group h2 {
+  font-size: 1rem;
+}
+
+.recording-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.recording-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(0, 2.2fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.recording-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.recording-time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.recording-time strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-time span {
+  font-size: 0.8rem;
+}
+
+.recording-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.recording-meta .url {
+  margin-top: 0;
+}
+
+.recording-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+@media (max-width: 900px) {
+  .playback-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .playback-filter-actions {
+    justify-content: flex-start;
+  }
+
+  .recording-row {
+    grid-template-columns: 1fr;
+  }
+
+  .recording-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .playback-filters {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Responsive ------------------------------------------------------------- */

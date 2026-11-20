@@ -3,6 +3,7 @@ import type { CameraStream } from './types';
 interface StreamPlayerCallbacks {
   onPlaying: () => void;
   onError: (message: string) => void;
+  onEnded?: () => void;
 }
 
 interface StreamMessage {
@@ -50,6 +51,22 @@ export class StreamPlayer {
   ) {}
 
   start(cameraId: string, stream: CameraStream): void {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.connect(
+      `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/stream` +
+        `?stream=${encodeURIComponent(stream)}`,
+    );
+  }
+
+  startPlayback(cameraId: string, start: string, end: string): void {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.connect(
+      `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/recordings/stream` +
+        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    );
+  }
+
+  private connect(url: string): void {
     this.stopped = false;
     this.failed = false;
     this.video.muted = true;
@@ -61,11 +78,7 @@ export class StreamPlayer {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(
-      `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/stream` +
-        `?stream=${encodeURIComponent(stream)}`,
-    );
+    const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
 
     socket.onmessage = (event) => this.handleMessage(event);
@@ -85,10 +98,6 @@ export class StreamPlayer {
   }
 
   stop(): void {
-    if (this.stopped) {
-      return;
-    }
-
     this.stopped = true;
     this.video.removeEventListener('playing', this.handlePlaying);
 
@@ -148,6 +157,8 @@ export class StreamPlayer {
           this.setupMediaSource(message.codec);
         } else if (message.type === 'error') {
           this.fail(message.message ?? 'The camera stream failed.');
+        } else if (message.type === 'ended') {
+          this.finish();
         }
       } catch {
         this.fail('The camera stream sent an invalid response.');
@@ -265,6 +276,10 @@ export class StreamPlayer {
   }
 
   private trimBuffer(): void {
+    if (this.stopped || this.failed) {
+      return;
+    }
+
     const sourceBuffer = this.sourceBuffer;
     if (!sourceBuffer || sourceBuffer.updating || this.appending) {
       return;
@@ -288,6 +303,36 @@ export class StreamPlayer {
     } catch {
       this.appending = false;
     }
+  }
+
+  private finish(): void {
+    if (this.stopped || this.failed) {
+      return;
+    }
+
+    // Keep the MediaSource and <video> attached so the last buffered frames can
+    // finish playing. stop() performs the final cleanup.
+    this.stopped = true;
+    this.video.removeEventListener('playing', this.handlePlaying);
+
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onmessage = null;
+      socket.close(1000, 'Playback ended');
+    }
+
+    if (this.mediaSource?.readyState === 'open') {
+      try {
+        this.mediaSource.endOfStream();
+      } catch {
+        // The media source may already be closed.
+      }
+    }
+
+    this.callbacks.onEnded?.();
   }
 
   private fail(message: string): void {

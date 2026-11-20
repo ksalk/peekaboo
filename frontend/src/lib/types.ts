@@ -25,3 +25,20 @@ export interface Camera {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface RecordingSegment {
+  start: string;
+  end: string;
+  durationSeconds: number;
+  codecType: string | null;
+  playbackUrl: string;
+}
+
+export interface RecordingSearchResult {
+  cameraId: string;
+  cameraName: string;
+  start: string;
+  end: string;
+  truncated: boolean;
+  recordings: RecordingSegment[];
+}
