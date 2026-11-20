@@ -20,7 +20,7 @@ public sealed class AppDatabaseTests : IDisposable
 
         using var connection = database.Open();
 
-        Assert.Equal(1L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(2L, ExecuteScalar(connection, "PRAGMA user_version"));
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
         using (var command = connection.CreateCommand())
@@ -36,7 +36,44 @@ public sealed class AppDatabaseTests : IDisposable
 
         Assert.Contains("users", tables);
         Assert.Contains("sessions", tables);
+        Assert.Contains("nvrs", tables);
         Assert.Contains("cameras", tables);
+
+        var cameraColumns = Columns(connection, "cameras");
+        Assert.Contains("nvr_id", cameraColumns);
+        Assert.Contains("main_stream_id", cameraColumns);
+        Assert.Contains("sub_stream_id", cameraColumns);
+        Assert.DoesNotContain("url", cameraColumns);
+    }
+
+    [Fact]
+    public void Migration_replaces_url_based_cameras()
+    {
+        var path = Path.Combine(_directory, "legacy.db");
+
+        var initialMigration = MigrationRunner.LoadMigrations()
+            .First(migration => migration.Version == 1);
+
+        using (var legacy = new SqliteConnection($"Data Source={path}"))
+        {
+            legacy.Open();
+            using var command = legacy.CreateCommand();
+            command.CommandText = initialMigration.Sql + """
+
+                INSERT INTO cameras (id, name, url, created_at, updated_at)
+                VALUES ('old', 'Legacy', 'rtsp://legacy.local/stream', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                PRAGMA user_version = 1;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var database = new AppDatabase(path);
+        database.Initialize(NullLogger<AppDatabase>.Instance);
+
+        using var connection = database.Open();
+        Assert.Equal(2L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(0L, ExecuteScalar(connection, "SELECT COUNT(*) FROM cameras"));
+        Assert.Contains("nvr_id", Columns(connection, "cameras"));
     }
 
     [Fact]
@@ -69,6 +106,21 @@ public sealed class AppDatabaseTests : IDisposable
             () => reopened.Initialize(NullLogger<AppDatabase>.Instance));
 
         Assert.Contains("newer", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> Columns(SqliteConnection connection, string table)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        return columns;
     }
 
     private static object? ExecuteScalar(SqliteConnection connection, string sql)

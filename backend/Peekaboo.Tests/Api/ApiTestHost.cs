@@ -18,9 +18,11 @@ internal sealed class ApiTestHost : IDisposable
 
     public ApiTestHost(IReadOnlyDictionary<string, string?>? settings = null)
     {
+        DatabasePath = Path.Combine(_directory, "peekaboo.db");
+
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("PEEKABOO_DB_PATH", Path.Combine(_directory, "peekaboo.db"));
+            builder.UseSetting("PEEKABOO_DB_PATH", DatabasePath);
             builder.UseSetting("ADMIN_USERNAME", AdminUsername);
             builder.UseSetting("ADMIN_PASSWORD", AdminPassword);
 
@@ -33,6 +35,8 @@ internal sealed class ApiTestHost : IDisposable
             }
         });
     }
+
+    public string DatabasePath { get; }
 
     public TestServer Server => _factory.Server;
 

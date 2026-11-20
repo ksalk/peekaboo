@@ -7,6 +7,7 @@ using Peekaboo.Api.Auth;
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
+using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Security;
 using Peekaboo.Api.Streaming;
 
@@ -34,6 +35,7 @@ var databasePath = builder.Configuration["PEEKABOO_DB_PATH"] ?? "data/peekaboo.d
 builder.Services.AddSingleton(new AppDatabase(databasePath));
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton<NvrService>();
 builder.Services.AddSingleton<CameraService>();
 builder.Services.AddSingleton(CameraCredentials.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
@@ -132,6 +134,7 @@ app.UseWebSockets(new WebSocketOptions
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
+app.MapNvrEndpoints();
 app.MapCameraEndpoints();
 app.MapStreamEndpoints();
 

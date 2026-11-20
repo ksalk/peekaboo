@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Streaming;
 using Xunit;
 
@@ -66,7 +67,7 @@ public sealed class StreamSessionTests : IDisposable
         var credentials = CameraCredentials.FromConfiguration(new ConfigurationBuilder().Build());
 
         return new StreamSession(
-            "camera",
+            new StreamKey("camera", CameraStream.Sub),
             "rtsp://fake.local/stream",
             options,
             credentials,

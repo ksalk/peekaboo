@@ -1,16 +1,33 @@
+using System.Globalization;
+
 namespace Peekaboo.Api.Cameras;
+
+public enum CameraStream
+{
+    Main,
+    Sub,
+}
 
 public sealed record CameraDto(
     string Id,
+    string NvrId,
+    string NvrName,
     string Name,
-    string Url,
+    string MainStreamId,
+    string SubStreamId,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+public sealed record CameraStreamTarget(
+    string CameraId,
+    string CameraName,
+    CameraStream Stream,
+    string Url);
 
 public static class CameraValidation
 {
     private const int MaximumNameLength = 100;
-    private const int MaximumUrlLength = 2048;
+    private const int MaximumStreamIdLength = 6;
 
     public static string? NameError(string? name)
     {
@@ -30,45 +47,28 @@ public static class CameraValidation
             : null;
     }
 
-    public static string? UrlError(string? url)
+    public static string? StreamIdError(string? streamId, string fieldName)
     {
-        if (string.IsNullOrWhiteSpace(url))
+        if (string.IsNullOrWhiteSpace(streamId))
         {
-            return "Camera URL is required.";
+            return $"{fieldName} is required.";
         }
 
-        var trimmed = url.Trim();
-        if (trimmed.Length > MaximumUrlLength)
+        var trimmed = streamId.Trim();
+        if (trimmed.Length > MaximumStreamIdLength ||
+            !trimmed.All(char.IsAsciiDigit) ||
+            !int.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ||
+            value < 1)
         {
-            return $"Camera URL must be at most {MaximumUrlLength} characters.";
+            return $"{fieldName} must be a positive number, for example 101.";
         }
 
-        if (ContainsControlCharacters(trimmed))
-        {
-            return "Camera URL must not contain control characters.";
-        }
-
-        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
-        {
-            return "Camera URL must be an absolute RTSP URL.";
-        }
-
-        if (!string.Equals(uri.Scheme, "rtsp", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(uri.Scheme, "rtsps", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Camera URL must use the rtsp:// or rtsps:// scheme.";
-        }
-
-        if (!string.IsNullOrEmpty(uri.UserInfo))
-        {
-            return "Camera URL must not contain credentials; set CAMERA_USERNAME and " +
-                   "CAMERA_PASSWORD in the environment instead.";
-        }
-
-        return string.IsNullOrEmpty(uri.Host)
-            ? "Camera URL must include a host."
-            : null;
+        return null;
     }
+
+    public static string NormalizeStreamId(string streamId) =>
+        int.Parse(streamId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture)
+            .ToString(CultureInfo.InvariantCulture);
 
     private static bool ContainsControlCharacters(string value) =>
         value.Any(character => character < 0x20 || character == 0x7f);

@@ -35,17 +35,18 @@ internal sealed class StreamSession
     private int _started;
     private int _stopping;
     private int _failureReported;
+    private string? _failureMessage;
     private long _lastDataTimestamp;
 
     public StreamSession(
-        string cameraId,
+        StreamKey key,
         string cameraUrl,
         StreamOptions options,
         CameraCredentials credentials,
         ILogger logger,
         Action<StreamSession> onTerminated)
     {
-        CameraId = cameraId;
+        Key = key;
         _safeUrl = cameraUrl;
         _streamUrl = credentials.Resolve(cameraUrl);
         _options = options;
@@ -54,7 +55,11 @@ internal sealed class StreamSession
         _onTerminated = onTerminated;
     }
 
-    public string CameraId { get; }
+    public StreamKey Key { get; }
+
+    public string CameraId => Key.CameraId;
+
+    public string? FailureMessage => Volatile.Read(ref _failureMessage);
 
     public void Start()
     {
@@ -101,7 +106,7 @@ internal sealed class StreamSession
                 return;
             }
 
-            _logger.LogInformation("Stream started for camera {CameraId}", CameraId);
+            _logger.LogInformation("Stream started for {StreamKey}", Key);
 
             _ = Task.Run(() => ReadOutputAsync(process));
             _ = Task.Run(() => DrainStderrAsync(process));
@@ -237,7 +242,7 @@ internal sealed class StreamSession
 
             process.Dispose();
             _process = null;
-            _logger.LogInformation("Stream stopped for camera {CameraId}", CameraId);
+            _logger.LogInformation("Stream stopped for {StreamKey}", Key);
         }
 
         _onTerminated(this);
@@ -639,7 +644,8 @@ internal sealed class StreamSession
         }
 
         var safeMessage = _credentials.Redact(message, _safeUrl);
-        _logger.LogWarning("Stream for camera {CameraId} failed: {Message}", CameraId, safeMessage);
+        Volatile.Write(ref _failureMessage, safeMessage);
+        _logger.LogWarning("Stream {StreamKey} failed: {Message}", Key, safeMessage);
 
         lock (_subscriberGate)
         {

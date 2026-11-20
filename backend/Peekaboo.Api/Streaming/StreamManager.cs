@@ -1,58 +1,78 @@
 using System.Net.WebSockets;
+using Peekaboo.Api.Cameras;
 
 namespace Peekaboo.Api.Streaming;
+
+public readonly record struct StreamKey(string CameraId, CameraStream Stream)
+{
+    public override string ToString() =>
+        string.Concat(CameraId, ":", Stream == CameraStream.Main ? "main" : "sub");
+}
 
 public sealed class StreamManager(
     StreamOptions options,
     CameraCredentials credentials,
+    CameraService cameras,
     ILogger<StreamManager> logger) : IAsyncDisposable
 {
     private readonly object _gate = new();
-    private readonly Dictionary<string, StreamSession> _sessions = new();
+    private readonly Dictionary<StreamKey, StreamSession> _sessions = new();
 
     public async Task RunAsync(
-        string cameraId,
-        string cameraUrl,
+        StreamKey key,
         WebSocket socket,
         CancellationToken cancellationToken)
     {
         StreamSession? session;
         StreamSubscriber? subscriber;
+        string? rejection = null;
         var startedHere = false;
 
         lock (_gate)
         {
-            if (!_sessions.TryGetValue(cameraId, out session))
+            // Resolve the current target while holding the lock. This serializes
+            // stream creation with update/delete stop scans, so a session can never
+            // start with a configuration that was already replaced.
+            var target = cameras.GetStreamTarget(key.CameraId, key.Stream);
+
+            if (target is null)
+            {
+                session = null;
+                rejection = "The camera was deleted.";
+            }
+            else if (!_sessions.TryGetValue(key, out session))
             {
                 if (_sessions.Count >= options.MaxStreams)
                 {
                     session = null;
+                    rejection = $"Stream limit reached ({options.MaxStreams} concurrent streams).";
                 }
                 else
                 {
                     session = new StreamSession(
-                        cameraId,
-                        cameraUrl,
+                        key,
+                        target.Url,
                         options,
                         credentials,
                         logger,
                         OnSessionTerminated);
-                    _sessions.Add(cameraId, session);
+                    _sessions.Add(key, session);
                     startedHere = true;
                 }
             }
 
             subscriber = session?.AddSubscriber(options.MaxViewersPerStream);
+
+            if (session is not null && subscriber is null)
+            {
+                rejection = session.FailureMessage
+                    ?? "Too many viewers for this camera, or the stream is stopping.";
+            }
         }
 
         if (session is null || subscriber is null)
         {
-            await RejectAsync(
-                socket,
-                session is null
-                    ? $"Stream limit reached ({options.MaxStreams} concurrent streams)."
-                    : "Too many viewers for this camera, or the stream is stopping.",
-                cancellationToken);
+            await RejectAsync(socket, rejection ?? "Stream rejected.", cancellationToken);
             return;
         }
 
@@ -74,10 +94,10 @@ public sealed class StreamManager(
                 isLastSubscriber = session.RemoveSubscriber(subscriber) == 0;
 
                 if (isLastSubscriber &&
-                    _sessions.TryGetValue(cameraId, out var current) &&
+                    _sessions.TryGetValue(key, out var current) &&
                     ReferenceEquals(current, session))
                 {
-                    _sessions.Remove(cameraId);
+                    _sessions.Remove(key);
                 }
             }
 
@@ -88,19 +108,29 @@ public sealed class StreamManager(
         }
     }
 
-    public async Task StopCameraAsync(string cameraId, string message)
+    public Task StopCameraAsync(string cameraId, string message) =>
+        StopCamerasAsync([cameraId], message);
+
+    public async Task StopCamerasAsync(IEnumerable<string> cameraIds, string message)
     {
-        StreamSession? session;
+        var ids = cameraIds.ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var sessions = new List<StreamSession>();
 
         lock (_gate)
         {
-            _sessions.Remove(cameraId, out session);
+            foreach (var key in _sessions.Keys.Where(key => ids.Contains(key.CameraId)).ToArray())
+            {
+                sessions.Add(_sessions[key]);
+                _sessions.Remove(key);
+            }
         }
 
-        if (session is not null)
-        {
-            await session.StopAsync(message);
-        }
+        await Task.WhenAll(sessions.Select(session => session.StopAsync(message)));
     }
 
     public async ValueTask DisposeAsync()
@@ -120,9 +150,9 @@ public sealed class StreamManager(
     {
         lock (_gate)
         {
-            if (_sessions.TryGetValue(session.CameraId, out var current) && ReferenceEquals(current, session))
+            if (_sessions.TryGetValue(session.Key, out var current) && ReferenceEquals(current, session))
             {
-                _sessions.Remove(session.CameraId);
+                _sessions.Remove(session.Key);
             }
         }
     }

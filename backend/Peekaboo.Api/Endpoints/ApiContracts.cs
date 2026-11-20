@@ -8,4 +8,6 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewP
 
 public sealed record ResetPasswordRequest(string? NewPassword);
 
-public sealed record CameraRequest(string? Name, string? Url);
+public sealed record NvrRequest(string? Name, string? BaseUrl);
+
+public sealed record CameraRequest(string? Name, string? MainStreamId, string? SubStreamId);

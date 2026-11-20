@@ -1,4 +1,3 @@
-using System.Net.WebSockets;
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Streaming;
 
@@ -16,6 +15,7 @@ public static class StreamEndpoints
 
     private static async Task HandleStreamAsync(
         string id,
+        string? stream,
         HttpContext context,
         CameraService cameras,
         StreamManager streams)
@@ -28,6 +28,20 @@ public static class StreamEndpoints
             return;
         }
 
+        if (!TryParseStream(stream, out var cameraStream))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("Stream must be 'main' or 'sub'.");
+            return;
+        }
+
+        var target = cameras.GetStreamTarget(id, cameraStream);
+        if (target is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -35,37 +49,32 @@ public static class StreamEndpoints
             return;
         }
 
-        var camera = cameras.Get(id);
-        if (camera is null)
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
-
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
 
-        // The camera may have been deleted between the lookup and the upgrade.
-        if (cameras.Get(camera.Id) is null)
-        {
-            try
-            {
-                await StreamWebSocket.SendJsonAsync(
-                    socket,
-                    new { type = "error", message = "The camera was deleted." },
-                    context.RequestAborted);
-            }
-            catch (WebSocketException)
-            {
-            }
+        await streams.RunAsync(
+            new StreamKey(target.CameraId, target.Stream),
+            socket,
+            context.RequestAborted);
+    }
 
-            await StreamWebSocket.CloseOutputAsync(
-                socket,
-                WebSocketCloseStatus.PolicyViolation,
-                "Camera deleted",
-                context.RequestAborted);
-            return;
+    private static bool TryParseStream(string? value, out CameraStream stream)
+    {
+        var normalized = value?.Trim();
+
+        if (string.IsNullOrEmpty(normalized) ||
+            string.Equals(normalized, "sub", StringComparison.OrdinalIgnoreCase))
+        {
+            stream = CameraStream.Sub;
+            return true;
         }
 
-        await streams.RunAsync(camera.Id, camera.Url, socket, context.RequestAborted);
+        if (string.Equals(normalized, "main", StringComparison.OrdinalIgnoreCase))
+        {
+            stream = CameraStream.Main;
+            return true;
+        }
+
+        stream = default;
+        return false;
     }
 }

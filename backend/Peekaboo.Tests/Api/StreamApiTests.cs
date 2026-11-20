@@ -22,6 +22,7 @@ public sealed class StreamApiTests : IDisposable
             $"""
             #!/bin/sh
             echo "$$" >> "{StartLogPath}"
+            printf '%s\n' "$*" >> "{ArgsLogPath}"
             cat "{SamplePath}"
             exec sleep 300
             """);
@@ -44,11 +45,20 @@ public sealed class StreamApiTests : IDisposable
 
     private string StartLogPath => Path.Combine(_directory, "starts.log");
 
+    private string ArgsLogPath => Path.Combine(_directory, "args.log");
+
     private string ScriptPath => Path.Combine(_directory, "fake-ffmpeg.sh");
 
     private string FailScriptPath => Path.Combine(_directory, "fail-ffmpeg.sh");
 
-    private sealed record CameraResponse(string Id, string Name, string Url);
+    private sealed record NvrResponse(string Id, string Name, string BaseUrl);
+
+    private sealed record CameraResponse(
+        string Id,
+        string NvrId,
+        string Name,
+        string MainStreamId,
+        string SubStreamId);
 
     [Fact]
     public async Task Stream_starts_on_first_websocket_and_stops_after_close()
@@ -59,7 +69,7 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost();
-        var (_, cameraId, cookie) = await SetupCameraAsync(host);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
         using var socket = await ConnectAsync(host, cameraId, cookie);
 
         var codec = await ReceiveReadyAsync(socket);
@@ -89,7 +99,7 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost();
-        var (_, cameraId, cookie) = await SetupCameraAsync(host);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
 
         using var first = await ConnectAsync(host, cameraId, cookie);
         using var second = await ConnectAsync(host, cameraId, cookie);
@@ -119,7 +129,7 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost();
-        var (client, cameraId, cookie) = await SetupCameraAsync(host);
+        var (client, nvrId, cameraId, cookie) = await SetupCameraAsync(host);
         using var socket = await ConnectAsync(host, cameraId, cookie);
 
         await ReceiveReadyAsync(socket);
@@ -128,7 +138,7 @@ public sealed class StreamApiTests : IDisposable
 
         var errorTask = ReceiveTextMessageAsync(socket);
 
-        using var delete = await client.DeleteAsync($"/api/cameras/{cameraId}");
+        using var delete = await client.DeleteAsync($"/api/nvrs/{nvrId}/cameras/{cameraId}");
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var error = await errorTask;
@@ -145,8 +155,8 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost(maxStreams: 1);
-        var (_, firstCameraId, cookie) = await SetupCameraAsync(host, "First");
-        var (_, secondCameraId, _) = await SetupCameraAsync(host, "Second");
+        var (_, _, firstCameraId, cookie) = await SetupCameraAsync(host, "First");
+        var (_, _, secondCameraId, _) = await SetupCameraAsync(host, "Second");
 
         using var first = await ConnectAsync(host, firstCameraId, cookie);
         await ReceiveReadyAsync(first);
@@ -171,7 +181,7 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost(maxViewers: 1);
-        var (_, cameraId, cookie) = await SetupCameraAsync(host);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
 
         using var first = await ConnectAsync(host, cameraId, cookie);
         await ReceiveReadyAsync(first);
@@ -196,7 +206,7 @@ public sealed class StreamApiTests : IDisposable
         }
 
         using var host = CreateHost(scriptPath: FailScriptPath);
-        var (_, cameraId, cookie) = await SetupCameraAsync(host);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
         using var socket = await ConnectAsync(host, cameraId, cookie);
 
         var error = await ReceiveTextMessageAsync(socket);
@@ -205,18 +215,272 @@ public sealed class StreamApiTests : IDisposable
         Assert.Contains("401 Unauthorized", error, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Main_and_sub_streams_start_separate_ffmpeg_processes()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var main = await ConnectAsync(host, cameraId, cookie, "main");
+        using var sub = await ConnectAsync(host, cameraId, cookie, "sub");
+
+        await ReceiveReadyAsync(main);
+        await ReceiveBinaryAsync(main);
+        await ReceiveReadyAsync(sub);
+        await ReceiveBinaryAsync(sub);
+
+        await WaitForStartCountAsync(2);
+
+        await CloseQuietlyAsync(main);
+        await CloseQuietlyAsync(sub);
+        await WaitForAllProcessesGoneAsync();
+    }
+
+    [Fact]
+    public async Task Isapi_url_and_credentials_are_passed_to_ffmpeg()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(withCredentials: true);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie, "main");
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+
+        var arguments = await WaitForArgsAsync();
+
+        Assert.Contains(
+            "-i rtsp://viewer:secret@fake.local:554/ISAPI/Streaming/channels/101",
+            arguments,
+            StringComparison.Ordinal);
+
+        await CloseQuietlyAsync(socket);
+        await WaitForAllProcessesGoneAsync();
+    }
+
+    [Fact]
+    public async Task Invalid_stream_query_is_rejected()
+    {
+        using var host = CreateHost();
+        var (client, _, cameraId, _) = await SetupCameraAsync(host);
+
+        using var response = await client.GetAsync(
+            $"/api/cameras/{cameraId}/stream?stream=both");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "main",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Missing_camera_stream_returns_not_found()
+    {
+        using var host = CreateHost();
+        var (client, _, _, _) = await SetupCameraAsync(host);
+
+        using var response = await client.GetAsync("/api/cameras/missing/stream");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Deleting_an_nvr_stops_its_live_stream()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (client, nvrId, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie);
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+        var pid = await WaitForStartedProcessAsync();
+
+        var errorTask = ReceiveTextMessageAsync(socket);
+
+        using var delete = await client.DeleteAsync($"/api/nvrs/{nvrId}");
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+
+        var error = await errorTask;
+        Assert.Contains("NVR was deleted", error, StringComparison.OrdinalIgnoreCase);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Updating_camera_stream_ids_stops_its_live_stream()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (client, nvrId, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie);
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+        var pid = await WaitForStartedProcessAsync();
+
+        var errorTask = ReceiveTextMessageAsync(socket);
+
+        using var update = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvrId}/cameras/{cameraId}",
+            new { name = "Test camera", mainStreamId = "201", subStreamId = "202" });
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+
+        var error = await errorTask;
+        Assert.Contains("updated", error, StringComparison.OrdinalIgnoreCase);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Changing_an_nvr_base_url_stops_its_live_stream()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (client, nvrId, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie);
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+        var pid = await WaitForStartedProcessAsync();
+
+        var errorTask = ReceiveTextMessageAsync(socket);
+
+        using var update = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvrId}",
+            new { name = "Test NVR", baseUrl = "rtsp://fake2.local:554" });
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+
+        var error = await errorTask;
+        Assert.Contains("updated", error, StringComparison.OrdinalIgnoreCase);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Name_only_updates_do_not_stop_live_streams()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (client, nvrId, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie);
+
+        await ReceiveReadyAsync(socket);
+        await ReceiveBinaryAsync(socket);
+        var pid = await WaitForStartedProcessAsync();
+
+        using var updateNvr = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvrId}",
+            new { name = "Renamed NVR", baseUrl = "rtsp://fake.local:554" });
+        Assert.Equal(HttpStatusCode.OK, updateNvr.StatusCode);
+
+        using var updateCamera = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvrId}/cameras/{cameraId}",
+            new { name = "Renamed camera", mainStreamId = "101", subStreamId = "102" });
+        Assert.Equal(HttpStatusCode.OK, updateCamera.StatusCode);
+
+        await Task.Delay(300);
+        Assert.True(ProcessAlive(pid), "name-only updates must not restart the stream");
+
+        await CloseQuietlyAsync(socket);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Main_and_sub_count_toward_the_stream_limit()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(maxStreams: 1);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+
+        using var sub = await ConnectAsync(host, cameraId, cookie);
+        await ReceiveReadyAsync(sub);
+        await ReceiveBinaryAsync(sub);
+
+        using var main = await ConnectAsync(host, cameraId, cookie, "main");
+        var error = await ReceiveTextMessageAsync(main);
+        Assert.Contains("Stream limit", error, StringComparison.OrdinalIgnoreCase);
+
+        var pid = await WaitForStartedProcessAsync();
+        await CloseQuietlyAsync(sub);
+        await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Credentials_are_not_stored_or_returned()
+    {
+        using var host = CreateHost(withCredentials: true);
+        var (client, _, _, _) = await SetupCameraAsync(host);
+
+        var nvrs = await client.GetStringAsync("/api/nvrs");
+        var cameras = await client.GetStringAsync("/api/cameras");
+
+        Assert.DoesNotContain("secret", nvrs, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", cameras, StringComparison.Ordinal);
+
+        foreach (var suffix in new[] { "", "-wal", "-shm" })
+        {
+            var path = host.DatabasePath + suffix;
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            var contents = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path));
+            Assert.DoesNotContain("secret", contents, StringComparison.Ordinal);
+        }
+    }
+
     private ApiTestHost CreateHost(
         int maxStreams = 9,
         int maxViewers = 8,
-        string? scriptPath = null) =>
-        new(new Dictionary<string, string?>
+        string? scriptPath = null,
+        bool withCredentials = false)
+    {
+        var settings = new Dictionary<string, string?>
         {
             ["PEEKABOO_FFMPEG_PATH"] = scriptPath ?? ScriptPath,
             ["PEEKABOO_MAX_STREAMS"] = maxStreams.ToString(CultureInfo.InvariantCulture),
             ["PEEKABOO_MAX_VIEWERS_PER_STREAM"] = maxViewers.ToString(CultureInfo.InvariantCulture),
-        });
+        };
 
-    private async Task<(HttpClient Client, string CameraId, string Cookie)> SetupCameraAsync(
+        if (withCredentials)
+        {
+            settings["CAMERA_USERNAME"] = "viewer";
+            settings["CAMERA_PASSWORD"] = "secret";
+        }
+
+        return new ApiTestHost(settings);
+    }
+
+    private async Task<(HttpClient Client, string NvrId, string CameraId, string Cookie)> SetupCameraAsync(
         ApiTestHost host,
         string name = "Test camera")
     {
@@ -228,18 +492,30 @@ public sealed class StreamApiTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
         var cookie = login.Headers.GetValues("Set-Cookie").Single().Split(';', 2)[0];
 
+        using var createNvr = await client.PostAsJsonAsync(
+            "/api/nvrs",
+            new { name = "Test NVR", baseUrl = "rtsp://fake.local:554" });
+        Assert.Equal(HttpStatusCode.Created, createNvr.StatusCode);
+
+        var nvr = await createNvr.Content.ReadFromJsonAsync<NvrResponse>();
+        Assert.NotNull(nvr);
+
         using var create = await client.PostAsJsonAsync(
-            "/api/cameras",
-            new { name, url = "rtsp://fake.local/stream" });
+            $"/api/nvrs/{nvr.Id}/cameras",
+            new { name, mainStreamId = "101", subStreamId = "102" });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
 
         var camera = await create.Content.ReadFromJsonAsync<CameraResponse>();
         Assert.NotNull(camera);
 
-        return (client, camera.Id, cookie);
+        return (client, nvr.Id, camera.Id, cookie);
     }
 
-    private static async Task<WebSocket> ConnectAsync(ApiTestHost host, string cameraId, string cookie)
+    private static async Task<WebSocket> ConnectAsync(
+        ApiTestHost host,
+        string cameraId,
+        string cookie,
+        string? stream = null)
     {
         var client = host.Server.CreateWebSocketClient();
         client.ConfigureRequest = request =>
@@ -248,8 +524,10 @@ public sealed class StreamApiTests : IDisposable
             request.Headers["Origin"] = "http://localhost";
         };
 
+        var query = stream is null ? string.Empty : $"?stream={Uri.EscapeDataString(stream)}";
+
         return await client.ConnectAsync(
-            new Uri($"ws://localhost/api/cameras/{cameraId}/stream"),
+            new Uri($"ws://localhost/api/cameras/{cameraId}/stream{query}"),
             CancellationToken.None);
     }
 
@@ -345,6 +623,58 @@ public sealed class StreamApiTests : IDisposable
         catch (IOException)
         {
             return [];
+        }
+    }
+
+    private async Task<string> WaitForArgsAsync()
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (File.Exists(ArgsLogPath))
+            {
+                try
+                {
+                    var lines = await File.ReadAllLinesAsync(ArgsLogPath);
+                    if (lines.Length > 0)
+                    {
+                        return lines[^1];
+                    }
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new InvalidOperationException("Fake ffmpeg did not log its arguments.");
+    }
+
+    private async Task WaitForStartCountAsync(int count)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if ((await ReadStartLogAsync()).Count >= count)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new InvalidOperationException($"Expected at least {count} ffmpeg starts.");
+    }
+
+    private async Task WaitForAllProcessesGoneAsync()
+    {
+        var pids = (await ReadStartLogAsync())
+            .Select(line => int.TryParse(line, out var pid) ? pid : 0)
+            .Where(pid => pid > 0);
+
+        foreach (var pid in pids)
+        {
+            await WaitForProcessGoneAsync(pid);
         }
     }
 
