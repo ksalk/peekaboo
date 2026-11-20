@@ -64,7 +64,7 @@
 
       <nav class="main-nav" aria-label="Main navigation">
         <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
-        <a href="#/config" class:active={route === 'config'}>Cameras</a>
+        <a href="#/config" class:active={route === 'config'}>NVRs</a>
         {#if auth.user.isAdmin}
           <a href="#/users" class:active={route === 'users'}>Users</a>
         {/if}

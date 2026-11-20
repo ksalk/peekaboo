@@ -5,10 +5,21 @@ export interface User {
   createdAt: string;
 }
 
-export interface Camera {
+export interface Nvr {
   id: string;
   name: string;
-  url: string;
+  baseUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Camera {
+  id: string;
+  nvrId: string;
+  nvrName: string;
+  name: string;
+  mainStreamId: string;
+  subStreamId: string;
   createdAt: string;
   updatedAt: string;
 }

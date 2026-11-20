@@ -1,4 +1,4 @@
-import type { Camera, User } from './types';
+import type { Camera, Nvr, User } from './types';
 
 interface ProblemDetails {
   title?: string;
@@ -74,19 +74,42 @@ export const api = {
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
-  listCameras: () => request<Camera[]>('/api/cameras'),
-  createCamera: (name: string, url: string) =>
-    request<Camera>('/api/cameras', {
+  listNvrs: () => request<Nvr[]>('/api/nvrs'),
+  createNvr: (name: string, baseUrl: string) =>
+    request<Nvr>('/api/nvrs', {
       method: 'POST',
-      body: JSON.stringify({ name, url }),
+      body: JSON.stringify({ name, baseUrl }),
     }),
-  updateCamera: (id: string, name: string, url: string) =>
-    request<Camera>(`/api/cameras/${encodeURIComponent(id)}`, {
+  updateNvr: (id: string, name: string, baseUrl: string) =>
+    request<Nvr>(`/api/nvrs/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, url }),
+      body: JSON.stringify({ name, baseUrl }),
     }),
-  deleteCamera: (id: string) =>
-    request<void>(`/api/cameras/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  deleteNvr: (id: string) =>
+    request<void>(`/api/nvrs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  listCameras: () => request<Camera[]>('/api/cameras'),
+  createCamera: (nvrId: string, name: string, mainStreamId: string, subStreamId: string) =>
+    request<Camera>(`/api/nvrs/${encodeURIComponent(nvrId)}/cameras`, {
+      method: 'POST',
+      body: JSON.stringify({ name, mainStreamId, subStreamId }),
+    }),
+  updateCamera: (
+    nvrId: string,
+    id: string,
+    name: string,
+    mainStreamId: string,
+    subStreamId: string,
+  ) =>
+    request<Camera>(`/api/nvrs/${encodeURIComponent(nvrId)}/cameras/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, mainStreamId, subStreamId }),
+    }),
+  deleteCamera: (nvrId: string, id: string) =>
+    request<void>(
+      `/api/nvrs/${encodeURIComponent(nvrId)}/cameras/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    ),
 
   listUsers: () => request<User[]>('/api/users'),
   createUser: (username: string, password: string, isAdmin: boolean) =>

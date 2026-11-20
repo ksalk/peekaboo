@@ -211,8 +211,8 @@
   {:else if cameras.length === 0}
     <div class="empty-state">
       <h2>No cameras configured</h2>
-      <p>Add a camera first, then come back to build your grid.</p>
-      <a class="button primary" href="#/config">Add cameras</a>
+      <p>Add an NVR and its cameras first, then come back to build your grid.</p>
+      <a class="button primary" href="#/config">Add NVRs</a>
     </div>
   {:else}
     <p class="hint feed-hint-line">
@@ -267,7 +267,9 @@
               onclick={() => assignCamera(camera.id)}
             >
               <strong>{camera.name}</strong>
-              <span class="url">{camera.url}</span>
+              <span class="url">
+                {camera.nvrName} · main {camera.mainStreamId} · sub {camera.subStreamId}
+              </span>
             </button>
           {/each}
         </div>

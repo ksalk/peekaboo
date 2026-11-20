@@ -479,6 +479,84 @@ input[type='checkbox'] {
   margin-top: 0.6rem;
 }
 
+/* NVRs ------------------------------------------------------------------- */
+
+.nvr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.nvr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nvr-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.nvr-info {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.nvr-info h2 {
+  font-size: 1.05rem;
+}
+
+.nvr-cameras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.nvr-cameras .camera-row {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.camera-info h3 {
+  font-size: 0.95rem;
+}
+
+.stream-ids {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.camera-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.camera-form h3 {
+  font-size: 0.95rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
 /* Login ------------------------------------------------------------------ */
 
 .login-screen {
@@ -875,6 +953,10 @@ button.feed-center:hover .feed-hint {
   .camera-row,
   .user-row {
     align-items: flex-start;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 
   .actions {
