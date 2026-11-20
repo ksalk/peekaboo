@@ -52,7 +52,12 @@ public static class StreamEndpoints
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
 
         await streams.RunAsync(
-            new StreamKey(target.CameraId, target.Stream),
+            StreamKey.Live(target.CameraId, target.Stream),
+            () =>
+            {
+                var current = cameras.GetStreamTarget(id, cameraStream);
+                return current is null ? null : new StreamSource(current.Url);
+            },
             socket,
             context.RequestAborted);
     }

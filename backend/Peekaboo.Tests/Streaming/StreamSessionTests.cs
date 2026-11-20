@@ -67,7 +67,7 @@ public sealed class StreamSessionTests : IDisposable
         var credentials = CameraCredentials.FromConfiguration(new ConfigurationBuilder().Build());
 
         return new StreamSession(
-            new StreamKey("camera", CameraStream.Sub),
+            StreamKey.Live("camera", CameraStream.Sub),
             "rtsp://fake.local/stream",
             options,
             credentials,

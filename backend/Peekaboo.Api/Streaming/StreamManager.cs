@@ -3,16 +3,24 @@ using Peekaboo.Api.Cameras;
 
 namespace Peekaboo.Api.Streaming;
 
-public readonly record struct StreamKey(string CameraId, CameraStream Stream)
+/// <summary>
+/// Identifies a stream session. <see cref="Kind"/> must be one of the canonical
+/// <see cref="StreamKinds"/> values (or a future playback kind); keys are compared
+/// by exact string equality so sharing and the stream limit stay consistent.
+/// </summary>
+public readonly record struct StreamKey(string CameraId, string Kind)
 {
-    public override string ToString() =>
-        string.Concat(CameraId, ":", Stream == CameraStream.Main ? "main" : "sub");
+    public static StreamKey Live(string cameraId, CameraStream stream) =>
+        new(
+            cameraId,
+            stream == CameraStream.Main ? StreamKinds.Main : StreamKinds.Sub);
+
+    public override string ToString() => string.Concat(CameraId, ":", Kind);
 }
 
 public sealed class StreamManager(
     StreamOptions options,
     CameraCredentials credentials,
-    CameraService cameras,
     ILogger<StreamManager> logger) : IAsyncDisposable
 {
     private readonly object _gate = new();
@@ -20,6 +28,7 @@ public sealed class StreamManager(
 
     public async Task RunAsync(
         StreamKey key,
+        Func<StreamSource?> resolveSource,
         WebSocket socket,
         CancellationToken cancellationToken)
     {
@@ -30,12 +39,12 @@ public sealed class StreamManager(
 
         lock (_gate)
         {
-            // Resolve the current target while holding the lock. This serializes
+            // Resolve the current source while holding the lock. This serializes
             // stream creation with update/delete stop scans, so a session can never
             // start with a configuration that was already replaced.
-            var target = cameras.GetStreamTarget(key.CameraId, key.Stream);
+            var source = resolveSource();
 
-            if (target is null)
+            if (source is null)
             {
                 session = null;
                 rejection = "The camera was deleted.";
@@ -51,7 +60,7 @@ public sealed class StreamManager(
                 {
                     session = new StreamSession(
                         key,
-                        target.Url,
+                        source.Url,
                         options,
                         credentials,
                         logger,
