@@ -1,7 +1,7 @@
 # Security policy
 
-Peekaboo is a self-hosted application that exposes live NVR camera feeds. Please
-treat security reports responsibly.
+Peekaboo is a self-hosted application that exposes live and recorded NVR camera
+feeds. Please treat security reports responsibly.
 
 ## Reporting a vulnerability
 
@@ -32,8 +32,13 @@ hardening:
 - Set `PEEKABOO_TRUST_PROXY=true` only when the app port is unreachable except
   through that proxy.
 - Use a long, unique `ADMIN_PASSWORD` and a dedicated NVR account.
-- Keep the SQLite data volume private; it contains password hashes, NVR base URLs and
+- Keep the SQLite data volume private; it contains password hashes, NVR addresses and
   camera names/IDs.
+- Recording search talks to the NVR's HTTP(S) ISAPI service. Peekaboo probes HTTP
+  before HTTPS and only falls back to HTTPS when HTTP is unreachable, so disable the
+  NVR's HTTP service (or block port 80) if you require HTTPS. Plain HTTP sends NVR
+  credentials over the LAN. Only set `PEEKABOO_ISAPI_INSECURE_TLS=true` on a trusted
+  network.
 - Publish the container port only to the reverse proxy or your LAN.
 - Do not run untrusted code or grant accounts to people you would not give camera
   access to.
@@ -45,9 +50,14 @@ hardening:
   start and never stored in the database, browser, or logs. Anyone who can inspect
   container processes already has code execution inside the container, which is
   equivalent to full control of Peekaboo.
+- **NVR credentials are sent to the NVR's ISAPI service.** Recording search answers
+  HTTP authentication challenges from the configured NVR host. They are not included
+  in playback URLs or exposed to the browser.
+- **Playback URLs reveal the NVR host to authenticated users.** The URLs are
+  credential-free, but they contain the configured RTSP host and port. All users who
+  can open Playback can already see NVR addresses under **NVRs**.
 - **The health endpoint is unauthenticated.** It returns only `{"status":"ok"}` and
   is intended for container orchestration checks.
-- **Users may add arbitrary `rtsp://`/`rtsps://` NVR base URLs.** This is inherent to a
-  viewer configured by authenticated users. Base URLs are host-only and reject
-  embedded credentials, but they can still point at internal hosts. Do not give
-  accounts to untrusted people.
+- **Users may add arbitrary NVR addresses.** This is inherent to a viewer configured
+  by authenticated users. Addresses are host-only and reject embedded credentials, but
+  they can still point at internal hosts. Do not give accounts to untrusted people.
