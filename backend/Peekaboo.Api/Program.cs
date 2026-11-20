@@ -9,6 +9,7 @@ using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
 using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Nvrs;
+using Peekaboo.Api.Playback;
 using Peekaboo.Api.Security;
 using Peekaboo.Api.Streaming;
 
@@ -43,6 +44,7 @@ builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configurati
 builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
+builder.Services.AddSingleton<PlaybackService>();
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<StreamManager>();
 
@@ -141,6 +143,7 @@ app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapNvrEndpoints();
 app.MapCameraEndpoints();
+app.MapPlaybackEndpoints();
 app.MapStreamEndpoints();
 
 app.MapFallback((HttpContext context, IWebHostEnvironment environment) =>

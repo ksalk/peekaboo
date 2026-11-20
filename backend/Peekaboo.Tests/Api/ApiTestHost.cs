@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Peekaboo.Api.Isapi;
 
 namespace Peekaboo.Tests.Api;
 
@@ -16,7 +19,9 @@ internal sealed class ApiTestHost : IDisposable
 
     private readonly WebApplicationFactory<Program> _factory;
 
-    public ApiTestHost(IReadOnlyDictionary<string, string?>? settings = null)
+    public ApiTestHost(
+        IReadOnlyDictionary<string, string?>? settings = null,
+        IIsapiClient? isapiClient = null)
     {
         DatabasePath = Path.Combine(_directory, "peekaboo.db");
 
@@ -32,6 +37,15 @@ internal sealed class ApiTestHost : IDisposable
                 {
                     builder.UseSetting(key, value);
                 }
+            }
+
+            if (isapiClient is not null)
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IIsapiClient>();
+                    services.AddSingleton(isapiClient);
+                });
             }
         });
     }

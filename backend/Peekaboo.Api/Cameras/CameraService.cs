@@ -135,6 +135,29 @@ public sealed class CameraService(AppDatabase database)
         return ids;
     }
 
+    public CameraPlaybackSource? GetPlaybackSource(string cameraId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT c.id, c.name, n.id, n.base_url, c.main_stream_id
+            FROM cameras c
+            JOIN nvrs n ON n.id = c.nvr_id
+            WHERE c.id = $id
+            """;
+        command.Parameters.AddWithValue("$id", cameraId);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read()
+            ? new CameraPlaybackSource(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4))
+            : null;
+    }
+
     public CameraStreamTarget? GetStreamTarget(string cameraId, CameraStream stream)
     {
         using var connection = database.Open();

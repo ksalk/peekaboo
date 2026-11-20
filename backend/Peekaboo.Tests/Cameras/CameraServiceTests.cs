@@ -151,6 +151,25 @@ public sealed class CameraServiceTests : IDisposable
     }
 
     [Fact]
+    public void Playback_source_uses_the_camera_main_stream_and_nvr_base_url()
+    {
+        var nvr = _nvrs.Create("House NVR", "rtsp://192.168.1.64:554");
+        var camera = _cameras.Create(nvr.Id, "Front door", "101", "102");
+
+        Assert.NotNull(camera);
+
+        var source = _cameras.GetPlaybackSource(camera.Id);
+
+        Assert.NotNull(source);
+        Assert.Equal(camera.Id, source.CameraId);
+        Assert.Equal("Front door", source.CameraName);
+        Assert.Equal(nvr.Id, source.NvrId);
+        Assert.Equal("rtsp://192.168.1.64:554", source.RtspBaseUrl);
+        Assert.Equal("101", source.MainStreamId);
+        Assert.Null(_cameras.GetPlaybackSource("missing"));
+    }
+
+    [Fact]
     public void Camera_ids_can_be_listed_for_an_nvr()
     {
         var nvr = _nvrs.Create("House NVR", "rtsp://192.168.1.64:554");

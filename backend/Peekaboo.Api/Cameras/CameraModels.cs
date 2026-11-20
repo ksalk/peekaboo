@@ -24,6 +24,13 @@ public sealed record CameraStreamTarget(
     CameraStream Stream,
     string Url);
 
+public sealed record CameraPlaybackSource(
+    string CameraId,
+    string CameraName,
+    string NvrId,
+    string RtspBaseUrl,
+    string MainStreamId);
+
 public static class CameraValidation
 {
     private const int MaximumNameLength = 100;
