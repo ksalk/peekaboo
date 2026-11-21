@@ -69,7 +69,10 @@ public sealed class CameraCredentials
             return text;
         }
 
-        var redacted = text.Replace(Resolve(cameraUrl), cameraUrl, StringComparison.Ordinal);
+        var redacted = string.IsNullOrEmpty(cameraUrl)
+            ? text
+            : text.Replace(Resolve(cameraUrl), cameraUrl, StringComparison.Ordinal);
+
         return redacted.Replace(_password!, "***", StringComparison.Ordinal);
     }
 

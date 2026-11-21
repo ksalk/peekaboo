@@ -15,6 +15,8 @@ internal sealed class StreamSession
 {
     private const int MaximumStderrLines = 20;
 
+    private readonly StreamSource _source;
+    private readonly IStreamInput? _input;
     private readonly string _safeUrl;
     private readonly string _streamUrl;
     private readonly TimeSpan? _maximumDuration;
@@ -32,6 +34,7 @@ internal sealed class StreamSession
     private readonly Queue<string> _stderrLines = new();
 
     private Process? _process;
+    private Task? _inputTask;
     private StreamInfo? _streamInfo;
     private bool _readyPublished;
     private int _started;
@@ -44,20 +47,19 @@ internal sealed class StreamSession
     public StreamSession(
         StreamKey key,
         StreamSource source,
+        IStreamInput? input,
         StreamOptions options,
         CameraCredentials credentials,
         ILogger logger,
         Action<StreamSession> onTerminated)
     {
         Key = key;
-        _safeUrl = source switch
-        {
-            RtspStreamSource rtsp => rtsp.Url,
-            _ => throw new ArgumentException(
-                $"Unsupported stream source type {source.GetType().Name}.",
-                nameof(source)),
-        };
-        _streamUrl = credentials.Resolve(_safeUrl);
+        _source = source;
+        _input = input;
+        _safeUrl = source.SafeDescription;
+        _streamUrl = source is RtspStreamSource rtsp
+            ? credentials.Resolve(rtsp.Url)
+            : string.Empty;
         _maximumDuration = source.MaximumDuration;
         _isPlayback = source.IsPlayback;
         _options = options;
@@ -91,6 +93,7 @@ internal sealed class StreamSession
             var startInfo = new ProcessStartInfo
             {
                 FileName = _options.FfmpegPath,
+                RedirectStandardInput = _input is not null,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -118,6 +121,11 @@ internal sealed class StreamSession
             }
 
             _logger.LogInformation("Stream started for {StreamKey}", Key);
+
+            if (_input is not null)
+            {
+                _inputTask = Task.Run(() => PumpInputAsync(process));
+            }
 
             _ = Task.Run(() => ReadOutputAsync(process));
             _ = Task.Run(() => DrainStderrAsync(process));
@@ -239,6 +247,23 @@ internal sealed class StreamSession
             _ready.TrySetCanceled();
         }
 
+        var inputTask = _inputTask;
+        if (inputTask is not null)
+        {
+            try
+            {
+                await inputTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Timed out waiting for the stream input to stop for {StreamKey}", Key);
+            }
+            catch (Exception)
+            {
+                // The input task reports its own failures through ReportFailure.
+            }
+        }
+
         KillProcess();
 
         var process = _process;
@@ -274,25 +299,82 @@ internal sealed class StreamSession
             }
             : [];
 
-        return
-        [
-            "-hide_banner",
-            "-loglevel", "error",
-            "-rtsp_transport", _options.RtspTransport,
-            "-analyzeduration", "1000000",
-            "-probesize", "1000000",
-            "-i", _streamUrl,
-            "-map", "0:v:0",
-            "-an",
-            "-sn",
-            "-dn",
-            .. durationArguments,
-            "-c:v", "copy",
-            "-f", "mp4",
-            "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-            "-flush_packets", "1",
-            "pipe:1",
-        ];
+        return _source switch
+        {
+            RtspStreamSource =>
+            [
+                "-hide_banner",
+                "-loglevel", "error",
+                "-rtsp_transport", _options.RtspTransport,
+                "-analyzeduration", "1000000",
+                "-probesize", "1000000",
+                "-i", _streamUrl,
+                "-map", "0:v:0",
+                "-an",
+                "-sn",
+                "-dn",
+                .. durationArguments,
+                "-c:v", "copy",
+                "-f", "mp4",
+                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+                "-flush_packets", "1",
+                "pipe:1",
+            ],
+            HikvisionLiveStreamSource =>
+            [
+                "-hide_banner",
+                "-loglevel", "error",
+                "-f", "mpeg",
+                "-analyzeduration", "1000000",
+                "-probesize", "1000000",
+                "-i", "pipe:0",
+                "-map", "0:v:0",
+                "-an",
+                "-sn",
+                "-dn",
+                .. durationArguments,
+                "-c:v", "copy",
+                "-f", "mp4",
+                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+                "-flush_packets", "1",
+                "pipe:1",
+            ],
+            _ => throw new ArgumentException(
+                $"Unsupported stream source type {_source.GetType().Name}.",
+                nameof(_source)),
+        };
+    }
+
+    private async Task PumpInputAsync(Process process)
+    {
+        try
+        {
+            await _input!.RunAsync(process.StandardInput.BaseStream, _cts.Token);
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (Volatile.Read(ref _stopping) == 0 &&
+                Volatile.Read(ref _failureReported) == 0)
+            {
+                ReportFailure($"Hikvision stream error: {exception.Message}");
+            }
+        }
+        finally
+        {
+            try
+            {
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
     }
 
     private async Task ReadOutputAsync(Process process)

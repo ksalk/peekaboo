@@ -10,6 +10,11 @@ public abstract record StreamSource
     public abstract bool IsPlayback { get; }
 
     public abstract TimeSpan? MaximumDuration { get; }
+
+    /// <summary>
+    /// A credential-free description suitable for logs and error redaction.
+    /// </summary>
+    public abstract string SafeDescription { get; }
 }
 
 /// <summary>
@@ -24,6 +29,28 @@ public sealed record RtspStreamSource(
     public override bool IsPlayback => Playback;
 
     public override TimeSpan? MaximumDuration => Duration;
+
+    public override string SafeDescription => Url;
+}
+
+/// <summary>
+/// A live channel pulled through the Hikvision SDK private protocol. The ISAPI
+/// channel is the logical channel from the stored stream ID (101 -> 1); the SDK
+/// channel is resolved from the device's digital-channel numbering at login time.
+/// </summary>
+public sealed record HikvisionLiveStreamSource(
+    string NvrId,
+    string Host,
+    int SdkPort,
+    int IsapiChannel,
+    int StreamType) : StreamSource
+{
+    public override bool IsPlayback => false;
+
+    public override TimeSpan? MaximumDuration => null;
+
+    public override string SafeDescription =>
+        $"Hikvision SDK {Host}:{SdkPort} channel {IsapiChannel} stream {StreamType}";
 }
 
 /// <summary>

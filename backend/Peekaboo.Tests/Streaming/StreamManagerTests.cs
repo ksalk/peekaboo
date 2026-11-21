@@ -27,6 +27,7 @@ public sealed class StreamManagerTests
         await using var manager = new StreamManager(
             options,
             credentials,
+            new NoopInputFactory(),
             NullLogger<StreamManager>.Instance);
 
         using var socket = new CapturingWebSocket();
@@ -41,6 +42,83 @@ public sealed class StreamManagerTests
         Assert.Contains("\"type\":\"error\"", message, StringComparison.Ordinal);
         Assert.Contains("camera was deleted", message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(WebSocketState.CloseSent, socket.State);
+    }
+
+    [Fact]
+    public async Task Run_rejects_when_source_resolution_throws()
+    {
+        var options = new StreamOptions(
+            FfmpegPath: "ffmpeg",
+            MaxStreams: 9,
+            MaxViewersPerStream: 8,
+            StartupTimeout: TimeSpan.FromSeconds(5),
+            IdleTimeout: TimeSpan.FromSeconds(30),
+            RtspTransport: "tcp");
+
+        var credentials = CameraCredentials.FromConfiguration(
+            new ConfigurationBuilder().Build());
+
+        await using var manager = new StreamManager(
+            options,
+            credentials,
+            new NoopInputFactory(),
+            NullLogger<StreamManager>.Instance);
+
+        using var socket = new CapturingWebSocket();
+
+        await manager.RunAsync(
+            StreamKey.Live("camera-1", CameraStream.Sub),
+            () => throw new InvalidOperationException("Invalid SDK stream ID."),
+            socket,
+            CancellationToken.None);
+
+        var message = Assert.Single(socket.TextMessages);
+        Assert.Contains("Invalid SDK stream ID", message, StringComparison.Ordinal);
+        Assert.Equal(WebSocketState.CloseSent, socket.State);
+    }
+
+    [Fact]
+    public async Task Run_rejects_when_the_input_factory_throws()
+    {
+        var options = new StreamOptions(
+            FfmpegPath: "ffmpeg",
+            MaxStreams: 9,
+            MaxViewersPerStream: 8,
+            StartupTimeout: TimeSpan.FromSeconds(5),
+            IdleTimeout: TimeSpan.FromSeconds(30),
+            RtspTransport: "tcp");
+
+        var credentials = CameraCredentials.FromConfiguration(
+            new ConfigurationBuilder().Build());
+
+        await using var manager = new StreamManager(
+            options,
+            credentials,
+            new ThrowingInputFactory(),
+            NullLogger<StreamManager>.Instance);
+
+        using var socket = new CapturingWebSocket();
+
+        await manager.RunAsync(
+            StreamKey.Live("camera-1", CameraStream.Sub),
+            () => new RtspStreamSource("rtsp://fake.local/stream"),
+            socket,
+            CancellationToken.None);
+
+        var message = Assert.Single(socket.TextMessages);
+        Assert.Contains("SDK input unavailable", message, StringComparison.Ordinal);
+        Assert.Equal(WebSocketState.CloseSent, socket.State);
+    }
+
+    private sealed class NoopInputFactory : IStreamInputFactory
+    {
+        public IStreamInput? Create(StreamSource source) => null;
+    }
+
+    private sealed class ThrowingInputFactory : IStreamInputFactory
+    {
+        public IStreamInput? Create(StreamSource source) =>
+            throw new InvalidOperationException("SDK input unavailable.");
     }
 
     private sealed class CapturingWebSocket : WebSocket

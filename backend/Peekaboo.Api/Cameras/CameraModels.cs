@@ -21,6 +21,11 @@ public sealed record CameraDto(
 public sealed record CameraStreamTarget(
     string CameraId,
     string CameraName,
+    string NvrId,
+    string NvrTransport,
+    string NvrHost,
+    int SdkPort,
+    string StreamId,
     CameraStream Stream,
     string Url);
 

@@ -15,6 +15,22 @@ public sealed class StreamSourceTests
     }
 
     [Fact]
+    public void Hikvision_live_sources_are_live_and_have_a_credential_free_description()
+    {
+        var source = new HikvisionLiveStreamSource(
+            "nvr-1",
+            "192.168.10.60",
+            8000,
+            IsapiChannel: 1,
+            StreamType: 1);
+
+        Assert.False(source.IsPlayback);
+        Assert.Null(source.MaximumDuration);
+        Assert.DoesNotContain("CAMERA_PASSWORD", source.SafeDescription, StringComparison.Ordinal);
+        Assert.Contains("192.168.10.60:8000", source.SafeDescription, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Rtsp_playback_sources_carry_their_marker_and_duration()
     {
         var duration = TimeSpan.FromMinutes(5);

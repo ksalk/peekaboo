@@ -29,6 +29,7 @@ public readonly record struct StreamKey(string CameraId, string Kind)
 public sealed class StreamManager(
     StreamOptions options,
     CameraCredentials credentials,
+    IStreamInputFactory inputFactory,
     ILogger<StreamManager> logger) : IAsyncDisposable
 {
     private readonly object _gate = new();
@@ -40,7 +41,7 @@ public sealed class StreamManager(
         WebSocket socket,
         CancellationToken cancellationToken)
     {
-        StreamSession? session;
+        StreamSession? session = null;
         StreamSubscriber? subscriber;
         string? rejection = null;
         var startedHere = false;
@@ -50,31 +51,56 @@ public sealed class StreamManager(
             // Resolve the current source while holding the lock. This serializes
             // stream creation with update/delete stop scans, so a session can never
             // start with a configuration that was already replaced.
-            var source = resolveSource();
-
-            if (source is null)
+            StreamSource? source = null;
+            try
             {
-                session = null;
-                rejection = "The camera was deleted.";
+                source = resolveSource();
             }
-            else if (!_sessions.TryGetValue(key, out session))
+            catch (Exception exception)
             {
-                if (_sessions.Count >= options.MaxStreams)
+                rejection = credentials.Redact(exception.Message, string.Empty);
+            }
+
+            if (rejection is null)
+            {
+                if (source is null)
                 {
                     session = null;
-                    rejection = $"Stream limit reached ({options.MaxStreams} concurrent streams).";
+                    rejection = "The camera was deleted.";
                 }
-                else
+                else if (!_sessions.TryGetValue(key, out session))
                 {
-                    session = new StreamSession(
-                        key,
-                        source,
-                        options,
-                        credentials,
-                        logger,
-                        OnSessionTerminated);
-                    _sessions.Add(key, session);
-                    startedHere = true;
+                    if (_sessions.Count >= options.MaxStreams)
+                    {
+                        session = null;
+                        rejection = $"Stream limit reached ({options.MaxStreams} concurrent streams).";
+                    }
+                    else
+                    {
+                        IStreamInput? input = null;
+                        try
+                        {
+                            input = inputFactory.Create(source);
+                        }
+                        catch (Exception exception)
+                        {
+                            rejection = credentials.Redact(exception.Message, string.Empty);
+                        }
+
+                        if (rejection is null)
+                        {
+                            session = new StreamSession(
+                                key,
+                                source,
+                                input,
+                                options,
+                                credentials,
+                                logger,
+                                OnSessionTerminated);
+                            _sessions.Add(key, session);
+                            startedHere = true;
+                        }
+                    }
                 }
             }
 

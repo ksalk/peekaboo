@@ -18,6 +18,7 @@ public static class StreamEndpoints
         string? stream,
         HttpContext context,
         CameraService cameras,
+        StreamSourceFactory sourceFactory,
         StreamManager streams)
     {
         if (!StreamOrigin.IsAllowed(
@@ -56,7 +57,7 @@ public static class StreamEndpoints
             () =>
             {
                 var current = cameras.GetStreamTarget(id, cameraStream);
-                return current is null ? null : new RtspStreamSource(current.Url);
+                return current is null ? null : sourceFactory.CreateLive(current);
             },
             socket,
             context.RequestAborted);

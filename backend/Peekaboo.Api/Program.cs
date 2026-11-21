@@ -51,6 +51,10 @@ builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
 builder.Services.AddSingleton<PlaybackService>();
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddSingleton<StreamSourceFactory>();
+builder.Services.AddSingleton<IStreamInputFactory>(services => new HikvisionStreamInputFactory(
+    services.GetRequiredService<HikvisionConnectionPool>(),
+    services.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddSingleton<StreamManager>();
 
 builder.Services.AddAuthentication(AuthConstants.Scheme)

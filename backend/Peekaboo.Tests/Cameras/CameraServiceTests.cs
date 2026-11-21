@@ -147,7 +147,24 @@ public sealed class CameraServiceTests : IDisposable
         Assert.NotNull(sub);
         Assert.Equal("rtsp://192.168.1.64:554/ISAPI/Streaming/channels/101", main.Url);
         Assert.Equal("rtsp://192.168.1.64:554/ISAPI/Streaming/channels/102", sub.Url);
+        Assert.Equal(NvrTransports.Rtsp, main.NvrTransport);
+        Assert.Equal(8000, main.SdkPort);
+        Assert.Equal("101", main.StreamId);
         Assert.Null(_cameras.GetStreamTarget("missing", CameraStream.Sub));
+    }
+
+    [Fact]
+    public void Stream_target_strips_ipv6_brackets_for_the_sdk_host()
+    {
+        var nvr = _nvrs.Create("IPv6 NVR", "rtsp://[::1]:554");
+        var camera = _cameras.Create(nvr.Id, "Front door", "101", "102");
+
+        Assert.NotNull(camera);
+
+        var target = _cameras.GetStreamTarget(camera.Id, CameraStream.Main);
+
+        Assert.NotNull(target);
+        Assert.Equal("::1", target.NvrHost);
     }
 
     [Fact]
