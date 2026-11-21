@@ -1060,6 +1060,25 @@ button.feed-center:hover .feed-hint {
   font-size: 0.85rem;
 }
 
+.playback-jump {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.playback-jump label {
+  flex: 1 1 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.playback-jump input[type='range'] {
+  width: 100%;
+}
+
 .recording-group {
   display: flex;
   flex-direction: column;

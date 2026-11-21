@@ -22,6 +22,7 @@
   let selectedSegment = $state<RecordingSegment | null>(null);
   let playerStatus = $state<PlayerStatus>('idle');
   let playerError = $state('');
+  let jumpOffset = $state(0);
   let copyState = $state<{ key: string; status: 'copied' | 'failed' } | null>(null);
   let videoElement = $state<HTMLVideoElement>();
   let playerCard = $state<HTMLElement>();
@@ -38,6 +39,15 @@
       (sum, segment) => sum + segment.durationSeconds,
       0,
     ),
+  );
+  const jumpTarget = $derived(
+    selectedSegment
+      ? formatTime(
+          new Date(
+            new Date(selectedSegment.start).getTime() + jumpOffset * 1000,
+          ).toISOString(),
+        )
+      : '',
   );
 
   onMount(() => {
@@ -188,14 +198,42 @@
     }
   }
 
+  function effectiveSegment(segment: RecordingSegment): RecordingSegment {
+    if (!result) {
+      return segment;
+    }
+
+    const start = Math.max(
+      new Date(segment.start).getTime(),
+      new Date(result.start).getTime(),
+    );
+    const end = Math.min(
+      new Date(segment.end).getTime(),
+      new Date(result.end).getTime(),
+    );
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return segment;
+    }
+
+    return {
+      ...segment,
+      start: new Date(start).toISOString(),
+      end: new Date(end).toISOString(),
+      durationSeconds: Math.max(0, Math.round((end - start) / 1000)),
+    };
+  }
+
   async function play(segment: RecordingSegment) {
     if (!cameraId) {
       return;
     }
 
+    const effective = effectiveSegment(segment);
     stopPlayback();
     const request = ++playRequest;
-    selectedSegment = segment;
+    selectedSegment = effective;
+    jumpOffset = 0;
     playerStatus = 'connecting';
     playerError = '';
     await tick();
@@ -231,7 +269,7 @@
     });
 
     player = instance;
-    instance.startPlayback(cameraId, segment.start, segment.end);
+    instance.startPlayback(cameraId, effective.start, effective.end);
   }
 
   function stopPlayback() {
@@ -306,7 +344,39 @@
   }
 
   function isSelected(segment: RecordingSegment): boolean {
-    return selectedSegment !== null && segmentKey(selectedSegment) === segmentKey(segment);
+    if (!selectedSegment) {
+      return false;
+    }
+
+    return (
+      new Date(segment.start).getTime() < new Date(selectedSegment.end).getTime() &&
+      new Date(segment.end).getTime() > new Date(selectedSegment.start).getTime()
+    );
+  }
+
+  function jumpToOffset() {
+    if (!selectedSegment) {
+      return;
+    }
+
+    const start = new Date(
+      new Date(selectedSegment.start).getTime() + jumpOffset * 1000,
+    );
+    const end = new Date(selectedSegment.end);
+
+    if (start >= end) {
+      return;
+    }
+
+    const adjusted: RecordingSegment = {
+      ...selectedSegment,
+      start: start.toISOString(),
+      durationSeconds: Math.max(
+        0,
+        Math.round((end.getTime() - start.getTime()) / 1000),
+      ),
+    };
+    void play(adjusted);
   }
 
   function formatDateInput(value: Date): string {
@@ -541,6 +611,7 @@
           <video
             bind:this={videoElement}
             class="playback-video"
+            controls
             muted
             playsinline
             aria-label="Recording playback"
@@ -562,6 +633,33 @@
             </div>
           {/if}
         </div>
+
+        <div class="playback-jump">
+          <label>
+            Jump to
+            <input
+              type="range"
+              min="0"
+              max={Math.max(1, selectedSegment.durationSeconds)}
+              step="1"
+              bind:value={jumpOffset}
+            />
+          </label>
+          <span class="muted">{jumpTarget}</span>
+          <button
+            class="button small"
+            type="button"
+            onclick={jumpToOffset}
+            disabled={playerStatus === 'connecting'}
+          >
+            Play from here
+          </button>
+        </div>
+        <p class="hint">
+          SDK playback can be slower than real time. Jumping restarts the NVR stream
+          at the selected time; the native video controls seek within the buffered
+          part.
+        </p>
       </article>
     {/if}
 

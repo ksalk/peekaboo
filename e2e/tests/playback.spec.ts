@@ -63,6 +63,44 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
     .toBeGreaterThan(0.5);
 
   await expectConsumerCount(feeds.playback.path, 1);
+  await expect(page.locator('.playback-video')).toHaveJSProperty('controls', true);
+  await expect(page.locator('.playback-jump')).toBeVisible();
+
+  const playerHeader = page.locator('.playback-player-header p');
+  const beforeJumpHeader = await playerHeader.innerText();
+  const beforeJumpTime = await page
+    .locator('.playback-video')
+    .evaluate((video: HTMLVideoElement) => video.currentTime);
+
+  await page.locator('.playback-jump input[type=range]').evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = '5';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.getByRole('button', { name: 'Play from here' }).click();
+
+  await expect(playerHeader).not.toHaveText(beforeJumpHeader);
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 10_000 },
+    )
+    .toBeLessThan(beforeJumpTime);
+
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0.5);
+  await expectConsumerCount(feeds.playback.path, 1);
 
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expectConsumerCount(feeds.playback.path, 0);

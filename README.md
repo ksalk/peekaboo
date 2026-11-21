@@ -47,8 +47,10 @@ SDK PS callback  ──┘
 For an NVR using the **Hikvision SDK** transport, Peekaboo logs in over the NVR's
 private protocol (default port 8000), starts the channel with
 `NET_DVR_RealPlay_V40`, and feeds the resulting MPEG-PS packets into ffmpeg's stdin.
-The SDK login is shared by all streams of that NVR and released as soon as the last
-viewer stops. No RTSP or ISAPI connection is needed for that NVR.
+The SDK login is shared by all streams of that NVR and cached after the last viewer
+stops to avoid re-authenticating for every search, playback, or jump. It is released
+when the NVR configuration changes or the server shuts down. No RTSP or ISAPI
+connection is needed for that NVR.
 
 For an RTSP NVR, Peekaboo builds each live-view URL at stream start:
 
@@ -247,7 +249,9 @@ written to SQLite.
 4. Use **Stop all** to release every stream at once.
 5. Open **Playback**, choose a camera and date, then press **Search recordings**. Use
    **Play** to watch a segment or, for RTSP NVRs, **Copy URL** to use the
-   credential-free RTSP URL in another player. **Close** releases the playback stream.
+   credential-free RTSP URL in another player. The player has native browser controls;
+   drag **Jump to** and press **Play from here** to restart the NVR stream at another
+   time. **Close** releases the playback stream.
 6. Playback also stops on tab hide, navigation, camera/date changes, and new searches.
 
 Assignments are stored per layout in this browser's `localStorage`; they survive
