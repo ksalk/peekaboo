@@ -72,10 +72,38 @@ internal sealed class HikvisionLoginApi(
         try
         {
             Marshal.StructureToPtr(login, loginPointer, fDeleteOld: false);
-            userId = HikvisionNative.NET_DVR_Login_V40(loginPointer, ref device);
-            if (userId < 0)
+
+            const int maximumAttempts = 4;
+            for (var attempt = 1; attempt <= maximumAttempts; attempt++)
             {
-                throw HikvisionErrorMapper.FromLastError($"log in to {host}:{port}");
+                userId = HikvisionNative.NET_DVR_Login_V40(loginPointer, ref device);
+                if (userId >= 0)
+                {
+                    break;
+                }
+
+                var errorCode = HikvisionNative.NET_DVR_GetLastError();
+                var retryable = errorCode is
+                    HikvisionConstants.NetDvrOverMaxLink or
+                    HikvisionConstants.NetDvrNetworkFailConnect or
+                    HikvisionConstants.NetDvrNetworkErrorData;
+
+                if (!retryable || attempt == maximumAttempts)
+                {
+                    throw HikvisionErrorMapper.FromCode(
+                        $"log in to {host}:{port}",
+                        errorCode);
+                }
+
+                logger.LogWarning(
+                    "Hikvision SDK login to {Host}:{Port} failed with error {ErrorCode}; " +
+                    "retrying ({Attempt}/{MaximumAttempts}).",
+                    host,
+                    port,
+                    errorCode,
+                    attempt + 1,
+                    maximumAttempts);
+                Thread.Sleep(750);
             }
 
             var info = MapDevice(device);

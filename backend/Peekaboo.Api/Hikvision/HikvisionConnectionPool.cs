@@ -27,9 +27,10 @@ internal sealed class HikvisionConnectionLease(
 }
 
 /// <summary>
-/// Shares one SDK login per NVR while one or more streams use it. The login is
-/// released as soon as the last lease is disposed, so no NVR session outlives the
-/// viewer that needed it.
+/// Shares one SDK login per NVR and keeps it cached after the last lease. A login
+/// is not a stream: this avoids re-authenticating for every live view, search, and
+/// playback jump, which some NVRs reject when sessions change rapidly. The login is
+/// released when the NVR configuration changes or the application shuts down.
 /// </summary>
 internal sealed class HikvisionConnectionPool(
     IHikvisionLoginApi loginApi,
@@ -69,6 +70,8 @@ internal sealed class HikvisionConnectionPool(
             await entry.LoginGate.WaitAsync(cancellationToken);
             try
             {
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
                 HikvisionConnection? created = null;
 
                 lock (entry.Sync)
@@ -99,7 +102,8 @@ internal sealed class HikvisionConnectionPool(
                         entry.Removed = true;
                     }
 
-                    _entries.TryRemove(key, out _);
+                    _entries.TryRemove(
+                        new KeyValuePair<HikvisionConnectionKey, Entry>(key, entry));
                     throw;
                 }
 
@@ -134,9 +138,10 @@ internal sealed class HikvisionConnectionPool(
     {
         foreach (var pair in _entries.Where(pair => pair.Key.NvrId == nvrId).ToArray())
         {
-            if (_entries.TryRemove(pair.Key, out var entry))
+            if (_entries.TryRemove(
+                    new KeyValuePair<HikvisionConnectionKey, Entry>(pair.Key, pair.Value)))
             {
-                RemoveEntry(entry);
+                RemoveEntry(pair.Value);
             }
         }
 
@@ -152,9 +157,10 @@ internal sealed class HikvisionConnectionPool(
 
         foreach (var pair in _entries.ToArray())
         {
-            if (_entries.TryRemove(pair.Key, out var entry))
+            if (_entries.TryRemove(
+                    new KeyValuePair<HikvisionConnectionKey, Entry>(pair.Key, pair.Value)))
             {
-                RemoveEntry(entry);
+                RemoveEntry(pair.Value);
             }
         }
 
@@ -198,12 +204,12 @@ internal sealed class HikvisionConnectionPool(
 
             entry.RefCount--;
 
-            if (entry.RefCount == 0)
+            if (entry.RefCount == 0 && entry.Removed)
             {
-                entry.Removed = true;
                 connection = entry.Connection;
                 entry.Connection = null;
-                _entries.TryRemove(entry.Key, out _);
+                _entries.TryRemove(
+                    new KeyValuePair<HikvisionConnectionKey, Entry>(entry.Key, entry));
             }
         }
 

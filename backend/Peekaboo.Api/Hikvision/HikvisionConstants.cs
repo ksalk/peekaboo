@@ -34,6 +34,7 @@ internal static class HikvisionConstants
     public const int NetDvrOverMaxLink = 5;
     public const int NetDvrNetworkFailConnect = 7;
     public const int NetDvrNetworkRecvTimeout = 10;
+    public const int NetDvrNetworkErrorData = 11;
     public const int NetDvrOperNoPermit = 13;
     public const int NetDvrNoSupport = 23;
 

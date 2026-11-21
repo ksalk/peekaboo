@@ -49,15 +49,11 @@ internal sealed class HikvisionPlaybackInput(
             pumpTask = PumpAsync(context, destination, cancellationToken);
 
             var para = CreateVodPara(sdkChannel);
-            handle = HikvisionNative.NET_DVR_PlayBackByTime_V50(
+            handle = await StartPlaybackAsync(
                 lease.Connection.UserId,
-                ref para);
-
-            if (handle < 0)
-            {
-                throw HikvisionErrorMapper.FromLastError(
-                    $"start playback on channel {sdkChannel}");
-            }
+                para,
+                sdkChannel,
+                cancellationToken);
 
             if (SetPlaybackCallback(handle, callbackId) == 0)
             {
@@ -126,6 +122,47 @@ internal sealed class HikvisionPlaybackInput(
                         source.SafeDescription);
                 }
             }
+        }
+    }
+
+    private async Task<int> StartPlaybackAsync(
+        int userId,
+        NetDvrVodParaV50 para,
+        int sdkChannel,
+        CancellationToken cancellationToken)
+    {
+        const int maximumAttempts = 4;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            var attemptPara = para;
+            var handle = HikvisionNative.NET_DVR_PlayBackByTime_V50(userId, ref attemptPara);
+            if (handle >= 0)
+            {
+                return handle;
+            }
+
+            var errorCode = HikvisionNative.NET_DVR_GetLastError();
+            var retryable = errorCode is
+                HikvisionConstants.NetDvrOverMaxLink or
+                HikvisionConstants.NetDvrNetworkFailConnect or
+                HikvisionConstants.NetDvrNetworkErrorData;
+
+            if (!retryable || attempt == maximumAttempts)
+            {
+                throw HikvisionErrorMapper.FromCode(
+                    $"start playback on channel {sdkChannel}",
+                    errorCode);
+            }
+
+            logger.LogWarning(
+                "Hikvision playback start for {Source} failed with error {ErrorCode}; " +
+                "retrying ({Attempt}/{MaximumAttempts}).",
+                source.SafeDescription,
+                errorCode,
+                attempt + 1,
+                maximumAttempts);
+            await Task.Delay(750, cancellationToken);
         }
     }
 

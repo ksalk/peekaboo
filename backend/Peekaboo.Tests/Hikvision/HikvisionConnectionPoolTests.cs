@@ -28,11 +28,19 @@ public sealed class HikvisionConnectionPoolTests
         Assert.Equal(0, api.LogoutCount);
 
         second.Dispose();
+        Assert.Equal(0, api.LogoutCount);
+
+        using (await pool.RentAsync(Key, CancellationToken.None))
+        {
+            Assert.Equal(1, api.LoginCount);
+        }
+
+        await pool.DisposeAsync();
         Assert.Equal(1, api.LogoutCount);
     }
 
     [Fact]
-    public async Task Rent_after_release_logs_in_again()
+    public async Task Rent_after_release_reuses_the_cached_login()
     {
         var api = new FakeLoginApi();
         await using var pool = new HikvisionConnectionPool(
@@ -46,11 +54,50 @@ public sealed class HikvisionConnectionPoolTests
 
         using (var second = await pool.RentAsync(Key, CancellationToken.None))
         {
-            Assert.Equal(2, api.LoginCount);
-            Assert.NotEqual(1, second.Connection.UserId);
+            Assert.Equal(1, api.LoginCount);
+            Assert.Equal(1, second.Connection.UserId);
         }
 
+        Assert.Equal(0, api.LogoutCount);
+    }
+
+    [Fact]
+    public async Task Late_release_does_not_evict_a_newer_cached_login()
+    {
+        var api = new FakeLoginApi();
+        await using var pool = new HikvisionConnectionPool(
+            api,
+            NullLogger<HikvisionConnectionPool>.Instance);
+
+        var oldLease = await pool.RentAsync(Key, CancellationToken.None);
+        await pool.InvalidateAsync(Key.NvrId);
+        var newLease = await pool.RentAsync(Key, CancellationToken.None);
+
+        Assert.Equal(2, api.LoginCount);
+
+        oldLease.Dispose();
+        Assert.Equal(1, api.LogoutCount);
+
+        newLease.Dispose();
+        Assert.Equal(1, api.LogoutCount);
+
+        await pool.DisposeAsync();
         Assert.Equal(2, api.LogoutCount);
+    }
+
+    [Fact]
+    public async Task Invalidate_releases_a_cached_login()
+    {
+        var api = new FakeLoginApi();
+        await using var pool = new HikvisionConnectionPool(
+            api,
+            NullLogger<HikvisionConnectionPool>.Instance);
+
+        (await pool.RentAsync(Key, CancellationToken.None)).Dispose();
+        Assert.Equal(0, api.LogoutCount);
+
+        await pool.InvalidateAsync(Key.NvrId);
+        Assert.Equal(1, api.LogoutCount);
     }
 
     [Fact]
@@ -88,6 +135,9 @@ public sealed class HikvisionConnectionPoolTests
         first.Dispose();
         second.Dispose();
 
+        Assert.Equal(0, api.LogoutCount);
+
+        await pool.DisposeAsync();
         Assert.Equal(2, api.LogoutCount);
     }
 
@@ -108,14 +158,15 @@ public sealed class HikvisionConnectionPoolTests
             Assert.Equal(0, api.LogoutCount);
         }
 
+        await pool.DisposeAsync();
         Assert.Equal(1, api.LogoutCount);
     }
 
     [Fact]
-    public async Task Lease_double_dispose_logs_out_once()
+    public async Task Lease_double_dispose_releases_once()
     {
         var api = new FakeLoginApi();
-        await using var pool = new HikvisionConnectionPool(
+        var pool = new HikvisionConnectionPool(
             api,
             NullLogger<HikvisionConnectionPool>.Instance);
 
@@ -123,6 +174,9 @@ public sealed class HikvisionConnectionPoolTests
         lease.Dispose();
         lease.Dispose();
 
+        Assert.Equal(0, api.LogoutCount);
+
+        await pool.DisposeAsync();
         Assert.Equal(1, api.LogoutCount);
     }
 
@@ -145,9 +199,12 @@ public sealed class HikvisionConnectionPoolTests
             Assert.NotNull(lease.Connection);
         }
 
-        // One login was orphaned by the invalidate, and the replacement was
-        // released by the lease. Both must be logged out.
+        // One login was orphaned by the invalidate; the replacement stays cached
+        // until the pool is disposed.
         Assert.Equal(2, api.LoginCount);
+        Assert.Equal(1, api.LogoutCount);
+
+        await pool.DisposeAsync();
         Assert.Equal(2, api.LogoutCount);
     }
 
