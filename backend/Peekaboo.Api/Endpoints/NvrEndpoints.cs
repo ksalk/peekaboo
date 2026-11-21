@@ -1,4 +1,5 @@
 using Peekaboo.Api.Cameras;
+using Peekaboo.Api.Hikvision;
 using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Streaming;
@@ -39,7 +40,9 @@ public static class NvrEndpoints
 
         var nvr = nvrs.Create(
             request.Name!.Trim(),
-            NvrValidation.NormalizeBaseUrl(request.BaseUrl!));
+            NvrValidation.NormalizeBaseUrl(request.BaseUrl!),
+            request.Transport ?? NvrTransports.Rtsp,
+            request.SdkPort ?? NvrTransports.DefaultSdkPort);
 
         return Results.Created($"/api/nvrs/{nvr.Id}", nvr);
     }
@@ -50,7 +53,8 @@ public static class NvrEndpoints
         NvrService nvrs,
         CameraService cameras,
         StreamManager streams,
-        IsapiEndpointResolver isapiEndpoints)
+        IsapiEndpointResolver isapiEndpoints,
+        HikvisionConnectionPool hikvisionConnections)
     {
         var validation = ValidateNvr(request);
         if (validation is not null)
@@ -68,21 +72,39 @@ public static class NvrEndpoints
             id,
             request.Name!.Trim(),
             NvrValidation.NormalizeBaseUrl(request.BaseUrl!),
-            existing.Transport,
-            existing.SdkPort);
+            request.Transport ?? existing.Transport,
+            request.SdkPort ?? existing.SdkPort);
 
         if (updated is null)
         {
             return Results.NotFound();
         }
 
-        if (!string.Equals(existing.BaseUrl, updated.BaseUrl, StringComparison.Ordinal))
-        {
-            isapiEndpoints.Invalidate(id, existing.BaseUrl);
-            isapiEndpoints.Invalidate(id, updated.BaseUrl);
+        var baseUrlChanged = !string.Equals(
+            existing.BaseUrl,
+            updated.BaseUrl,
+            StringComparison.Ordinal);
+        var transportChanged = existing.Transport != updated.Transport;
+        var sdkPortChanged = existing.SdkPort != updated.SdkPort &&
+            (existing.Transport == NvrTransports.HikvisionSdk ||
+             updated.Transport == NvrTransports.HikvisionSdk);
 
+        if (baseUrlChanged || transportChanged || sdkPortChanged)
+        {
             var cameraIds = cameras.ListCameraIdsForNvr(id);
             await streams.StopCamerasAsync(cameraIds, "The NVR configuration was updated.");
+
+            if (baseUrlChanged)
+            {
+                isapiEndpoints.Invalidate(id, existing.BaseUrl);
+                isapiEndpoints.Invalidate(id, updated.BaseUrl);
+            }
+
+            if (existing.Transport == NvrTransports.HikvisionSdk ||
+                updated.Transport == NvrTransports.HikvisionSdk)
+            {
+                await hikvisionConnections.InvalidateAsync(id);
+            }
         }
 
         return Results.Ok(updated);
@@ -92,7 +114,8 @@ public static class NvrEndpoints
         string id,
         NvrService nvrs,
         StreamManager streams,
-        IsapiEndpointResolver isapiEndpoints)
+        IsapiEndpointResolver isapiEndpoints,
+        HikvisionConnectionPool hikvisionConnections)
     {
         var existing = nvrs.Get(id);
         var cameraIds = nvrs.Delete(id);
@@ -101,12 +124,18 @@ public static class NvrEndpoints
             return Results.NotFound();
         }
 
+        await streams.StopCamerasAsync(cameraIds, "The NVR was deleted.");
+
         if (existing is not null)
         {
             isapiEndpoints.Invalidate(id, existing.BaseUrl);
+
+            if (existing.Transport == NvrTransports.HikvisionSdk)
+            {
+                await hikvisionConnections.InvalidateAsync(id);
+            }
         }
 
-        await streams.StopCamerasAsync(cameraIds, "The NVR was deleted.");
         return Results.NoContent();
     }
 
@@ -208,9 +237,28 @@ public static class NvrEndpoints
         }
 
         var baseUrlError = NvrValidation.BaseUrlError(request.BaseUrl);
-        return baseUrlError is null
-            ? null
-            : Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: baseUrlError);
+        if (baseUrlError is not null)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: baseUrlError);
+        }
+
+        if (request.Transport is not null &&
+            NvrValidation.TransportError(request.Transport) is { } transportError)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: transportError);
+        }
+
+        if (request.SdkPort is { } sdkPort &&
+            NvrValidation.SdkPortError(sdkPort) is { } sdkPortError)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: sdkPortError);
+        }
+
+        return null;
     }
 
     private static IResult? ValidateCamera(CameraRequest request)

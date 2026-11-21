@@ -64,8 +64,8 @@ public sealed class NvrService(AppDatabase database)
         string id,
         string name,
         string baseUrl,
-        string transport = NvrTransports.Rtsp,
-        int sdkPort = NvrTransports.DefaultSdkPort)
+        string transport,
+        int sdkPort)
     {
         ValidateTransport(transport, sdkPort);
 

@@ -75,16 +75,35 @@ export const api = {
     }),
 
   listNvrs: () => request<Nvr[]>('/api/nvrs'),
-  createNvr: (name: string, baseUrl: string) =>
+  createNvr: (
+    name: string,
+    baseUrl: string,
+    transport: Nvr['transport'] = 'rtsp',
+    sdkPort = 8000,
+  ) =>
     request<Nvr>('/api/nvrs', {
       method: 'POST',
-      body: JSON.stringify({ name, baseUrl }),
+      body: JSON.stringify({ name, baseUrl, transport, sdkPort }),
     }),
-  updateNvr: (id: string, name: string, baseUrl: string) =>
-    request<Nvr>(`/api/nvrs/${encodeURIComponent(id)}`, {
+  updateNvr: (
+    id: string,
+    name: string,
+    baseUrl: string,
+    transport?: Nvr['transport'],
+    sdkPort?: number,
+  ) => {
+    const body: Record<string, unknown> = { name, baseUrl };
+    if (transport !== undefined) {
+      body.transport = transport;
+    }
+    if (sdkPort !== undefined) {
+      body.sdkPort = sdkPort;
+    }
+    return request<Nvr>(`/api/nvrs/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, baseUrl }),
-    }),
+      body: JSON.stringify(body),
+    });
+  },
   deleteNvr: (id: string) =>
     request<void>(`/api/nvrs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 

@@ -79,7 +79,7 @@ public sealed class NvrServiceTests : IDisposable
     public void Update_and_get_return_null_for_missing_nvr()
     {
         Assert.Null(_nvrs.Get("missing"));
-        Assert.Null(_nvrs.Update("missing", "Name", "rtsp://nvr.local:554"));
+        Assert.Null(_nvrs.Update("missing", "Name", "rtsp://nvr.local:554", NvrTransports.Rtsp, 8000));
     }
 
     [Theory]

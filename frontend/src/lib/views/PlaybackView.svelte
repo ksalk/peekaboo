@@ -602,17 +602,24 @@
 
                   <div class="recording-meta">
                     <span class="badge accent">{segment.codecType ?? 'video'}</span>
-                    <code class="url" title={segment.playbackUrl}>{segment.playbackUrl}</code>
+                    {#if segment.playbackUrl}
+                      <code class="url" title={segment.playbackUrl}>{segment.playbackUrl}</code>
+                    {:else}
+                      <span class="badge">SDK stream</span>
+                      <span class="muted">plays through Peekaboo; no shareable URL</span>
+                    {/if}
                   </div>
 
                   <div class="recording-actions">
-                    <button class="button small" onclick={() => void copyUrl(segment)}>
-                      {copyState?.key === segmentKey(segment)
-                        ? copyState.status === 'copied'
-                          ? 'Copied'
-                          : 'Copy failed'
-                        : 'Copy URL'}
-                    </button>
+                    {#if segment.playbackUrl}
+                      <button class="button small" onclick={() => void copyUrl(segment)}>
+                        {copyState?.key === segmentKey(segment)
+                          ? copyState.status === 'copied'
+                            ? 'Copied'
+                            : 'Copy failed'
+                          : 'Copy URL'}
+                      </button>
+                    {/if}
                     <button
                       class="button small primary"
                       disabled={busy}

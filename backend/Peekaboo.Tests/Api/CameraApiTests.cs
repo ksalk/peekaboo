@@ -10,6 +10,8 @@ public sealed class CameraApiTests
         string Id,
         string Name,
         string BaseUrl,
+        string Transport,
+        int SdkPort,
         DateTimeOffset CreatedAt,
         DateTimeOffset UpdatedAt);
 
@@ -22,6 +24,88 @@ public sealed class CameraApiTests
         string SubStreamId,
         DateTimeOffset CreatedAt,
         DateTimeOffset UpdatedAt);
+
+    [Fact]
+    public async Task Nvr_transport_and_sdk_port_round_trip_and_preserve_on_partial_update()
+    {
+        using var host = new ApiTestHost();
+        using var client = await host.CreateAdminClientAsync();
+
+        var nvr = await CreateNvrAsync(
+            client,
+            "SDK NVR",
+            "rtsp://192.168.10.60:554",
+            transport: "sdk",
+            sdkPort: 8001);
+
+        Assert.Equal("sdk", nvr.Transport);
+        Assert.Equal(8001, nvr.SdkPort);
+
+        using var partialUpdate = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvr.Id}",
+            new { name = "Renamed NVR", baseUrl = "rtsp://192.168.10.60:554" });
+        Assert.Equal(HttpStatusCode.OK, partialUpdate.StatusCode);
+        var preserved = await partialUpdate.Content.ReadFromJsonAsync<NvrResponse>();
+        Assert.NotNull(preserved);
+        Assert.Equal("Renamed NVR", preserved.Name);
+        Assert.Equal("sdk", preserved.Transport);
+        Assert.Equal(8001, preserved.SdkPort);
+
+        using var switchBack = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvr.Id}",
+            new
+            {
+                name = "Renamed NVR",
+                baseUrl = "rtsp://192.168.10.60:554",
+                transport = "rtsp",
+                sdkPort = 8000,
+            });
+        Assert.Equal(HttpStatusCode.OK, switchBack.StatusCode);
+        var rtsp = await switchBack.Content.ReadFromJsonAsync<NvrResponse>();
+        Assert.NotNull(rtsp);
+        Assert.Equal("rtsp", rtsp.Transport);
+        Assert.Equal(8000, rtsp.SdkPort);
+    }
+
+    [Fact]
+    public async Task Plain_put_on_an_rtsp_nvr_keeps_the_defaults()
+    {
+        using var host = new ApiTestHost();
+        using var client = await host.CreateAdminClientAsync();
+        var nvr = await CreateNvrAsync(client);
+
+        using var response = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvr.Id}",
+            new { name = "Renamed NVR", baseUrl = "rtsp://192.168.1.64:554" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await response.Content.ReadFromJsonAsync<NvrResponse>();
+        Assert.NotNull(updated);
+        Assert.Equal("rtsp", updated.Transport);
+        Assert.Equal(8000, updated.SdkPort);
+    }
+
+    [Theory]
+    [InlineData("bogus", 8000)]
+    [InlineData("sdk", 0)]
+    [InlineData("sdk", 65536)]
+    public async Task Invalid_nvr_transport_settings_are_rejected(string transport, int sdkPort)
+    {
+        using var host = new ApiTestHost();
+        using var client = await host.CreateAdminClientAsync();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/nvrs",
+            new
+            {
+                name = "SDK NVR",
+                baseUrl = "rtsp://192.168.10.60:554",
+                transport,
+                sdkPort,
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 
     [Fact]
     public async Task Nvr_and_camera_endpoints_require_authentication()
@@ -256,11 +340,13 @@ public sealed class CameraApiTests
     private static async Task<NvrResponse> CreateNvrAsync(
         HttpClient client,
         string name = "House NVR",
-        string baseUrl = "rtsp://192.168.1.64:554")
+        string baseUrl = "rtsp://192.168.1.64:554",
+        string? transport = null,
+        int? sdkPort = null)
     {
         using var response = await client.PostAsJsonAsync(
             "/api/nvrs",
-            new { name, baseUrl });
+            new { name, baseUrl, transport, sdkPort });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var nvr = await response.Content.ReadFromJsonAsync<NvrResponse>();

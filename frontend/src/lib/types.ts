@@ -9,6 +9,8 @@ export interface Nvr {
   id: string;
   name: string;
   baseUrl: string;
+  transport: 'rtsp' | 'sdk';
+  sdkPort: number;
   createdAt: string;
   updatedAt: string;
 }

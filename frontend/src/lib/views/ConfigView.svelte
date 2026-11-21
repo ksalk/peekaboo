@@ -7,6 +7,8 @@
     id: string | null;
     name: string;
     baseUrl: string;
+    transport: Nvr['transport'];
+    sdkPort: number;
   };
 
   type CameraForm = {
@@ -57,14 +59,20 @@
   }
 
   function startCreateNvr() {
-    nvrForm = { id: null, name: '', baseUrl: '' };
+    nvrForm = { id: null, name: '', baseUrl: '', transport: 'rtsp', sdkPort: 8000 };
     nvrFormError = null;
     cameraForm = null;
     cameraFormError = null;
   }
 
   function startEditNvr(nvr: Nvr) {
-    nvrForm = { id: nvr.id, name: nvr.name, baseUrl: nvr.baseUrl };
+    nvrForm = {
+      id: nvr.id,
+      name: nvr.name,
+      baseUrl: nvr.baseUrl,
+      transport: nvr.transport,
+      sdkPort: nvr.sdkPort,
+    };
     nvrFormError = null;
     cameraForm = null;
     cameraFormError = null;
@@ -82,18 +90,35 @@
       return;
     }
 
+    if (form.transport === 'sdk' &&
+        (!Number.isInteger(form.sdkPort) || form.sdkPort < 1 || form.sdkPort > 65535)) {
+      nvrFormError = 'SDK port must be between 1 and 65535.';
+      return;
+    }
+
     nvrFormError = null;
     nvrSaving = true;
 
     try {
       if (form.id) {
-        const updated = await api.updateNvr(form.id, form.name.trim(), form.baseUrl.trim());
+        const updated = await api.updateNvr(
+          form.id,
+          form.name.trim(),
+          form.baseUrl.trim(),
+          form.transport,
+          form.sdkPort,
+        );
         nvrs = sortNvrs(nvrs.map((nvr) => (nvr.id === updated.id ? updated : nvr)));
         cameras = cameras.map((camera) =>
           camera.nvrId === updated.id ? { ...camera, nvrName: updated.name } : camera,
         );
       } else {
-        const created = await api.createNvr(form.name.trim(), form.baseUrl.trim());
+        const created = await api.createNvr(
+          form.name.trim(),
+          form.baseUrl.trim(),
+          form.transport,
+          form.sdkPort,
+        );
         nvrs = sortNvrs([...nvrs, created]);
       }
 
@@ -252,7 +277,7 @@
   <div class="page-header">
     <div>
       <h1>NVRs</h1>
-      <p class="muted">Hikvision NVRs and their ISAPI camera channels.</p>
+      <p class="muted">Hikvision NVRs over RTSP/ISAPI or the Hikvision SDK.</p>
     </div>
     {#if !nvrForm}
       <button
@@ -295,12 +320,40 @@
         />
       </label>
 
+      <label>
+        Transport
+        <select bind:value={nvrForm.transport}>
+          <option value="rtsp">RTSP + ISAPI (default)</option>
+          <option value="sdk">Hikvision SDK</option>
+        </select>
+      </label>
+
+      {#if nvrForm.transport === 'sdk'}
+        <label>
+          SDK port
+          <input
+            type="number"
+            bind:value={nvrForm.sdkPort}
+            min="1"
+            max="65535"
+            required
+          />
+        </label>
+      {/if}
+
       <p class="hint">
-        Enter the NVR's IP address or hostname. Live video uses RTSP port 554 unless you
-        specify another port; recording search finds the web/ISAPI service on HTTP port
-        80 or HTTPS port 443. Explicit <code>rtsp://</code> and <code>rtsps://</code>
-        URLs are also accepted. Peekaboo appends
-        <code>/ISAPI/Streaming/channels/&lt;id&gt;</code>.
+        {#if nvrForm.transport === 'sdk'}
+          The SDK transport uses the NVR's private-protocol port (usually 8000).
+          The server must have the Hikvision SDK installed and be able to reach this
+          port. The NVR address still supplies the host; its RTSP port is not used
+          for this transport.
+        {:else}
+          Enter the NVR's IP address or hostname. Live video uses RTSP port 554 unless
+          you specify another port; recording search finds the web/ISAPI service on
+          HTTP port 80 or HTTPS port 443. Explicit <code>rtsp://</code> and
+          <code>rtsps://</code> URLs are also accepted. Peekaboo appends
+          <code>/ISAPI/Streaming/channels/&lt;id&gt;</code>.
+        {/if}
       </p>
 
       {#if nvrFormError}
@@ -333,6 +386,9 @@
           <header class="nvr-header">
             <div class="nvr-info">
               <h2>{nvr.name}</h2>
+              <span class="badge">
+                {nvr.transport === 'sdk' ? `SDK :${nvr.sdkPort}` : 'RTSP'}
+              </span>
               <code class="url" title={nvr.baseUrl}>{nvr.baseUrl}</code>
             </div>
 
@@ -436,6 +492,11 @@
                 <p class="hint">
                   ISAPI ID = channel × 100 + stream type: 101 = channel 1 main,
                   102 = channel 1 sub.
+                  {#if nvr.transport === 'sdk'}
+                    For SDK NVRs, Peekaboo maps the logical channel to the NVR's
+                    digital-channel numbering (for example channel 1 to 33 on a
+                    pure-IP NVR).
+                  {/if}
                 </p>
 
                 {#if cameraFormError}
