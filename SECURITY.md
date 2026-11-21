@@ -34,11 +34,20 @@ hardening:
 - Use a long, unique `ADMIN_PASSWORD` and a dedicated NVR account.
 - Keep the SQLite data volume private; it contains password hashes, NVR addresses and
   camera names/IDs.
-- Recording search talks to the NVR's HTTP(S) ISAPI service. Peekaboo probes HTTP
-  before HTTPS and only falls back to HTTPS when HTTP is unreachable, so disable the
-  NVR's HTTP service (or block port 80) if you require HTTPS. Plain HTTP sends NVR
-  credentials over the LAN. Only set `PEEKABOO_ISAPI_INSECURE_TLS=true` on a trusted
-  network.
+- For RTSP NVRs, recording search talks to the NVR's HTTP(S) ISAPI service. Peekaboo
+  probes HTTP before HTTPS and only falls back to HTTPS when HTTP is unreachable, so
+  disable the NVR's HTTP service (or block port 80) if you require HTTPS. Plain HTTP
+  sends NVR credentials over the LAN. Only set `PEEKABOO_ISAPI_INSECURE_TLS=true` on a
+  trusted network.
+- The default image contains no Hikvision SDK. The optional private `runtime-sdk`
+  image bundles Hikvision's proprietary native library. It runs in-process, so a
+  vendor bug can crash the API, and it does not receive distro security updates. Keep
+  that image private, on a trusted network, and rebuild it when Hikvision releases a
+  newer SDK.
+- The SDK's bundled OpenSSL is kept in `/app/hikvision/private` and selected through
+  `NET_DVR_SetSDKInitCfg`, not `LD_LIBRARY_PATH`, so the rest of the process uses the
+  distro's TLS stack. SDK file logging is off by default; if enabled, store its logs
+  on the private data volume.
 - Publish the container port only to the reverse proxy or your LAN.
 - Do not run untrusted code or grant accounts to people you would not give camera
   access to.
@@ -53,6 +62,9 @@ hardening:
 - **NVR credentials are sent to the NVR's ISAPI service.** Recording search answers
   HTTP authentication challenges from the configured NVR host. They are not included
   in playback URLs or exposed to the browser.
+- **NVR credentials are passed to the Hikvision SDK login call.** The SDK struct is
+  marshalled into unmanaged memory and both the managed and unmanaged password buffers
+  are cleared immediately after login. Credentials are never logged.
 - **Playback URLs reveal the NVR host to authenticated users.** The URLs are
   credential-free, but they contain the configured RTSP host and port. All users who
   can open Playback can already see NVR addresses under **NVRs**.

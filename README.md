@@ -6,27 +6,30 @@ A simple, lightweight, self-hosted Hikvision NVR viewer for the web.
 
 Peekaboo is built around one rule: **an NVR channel is only pulled while someone is
 actually watching it**. Nothing is streamed on page load, and the server kills the
-RTSP/ffmpeg process as soon as the last viewer stops watching. Closing the tab,
-changing the grid, logging out, or losing the connection all stop the stream. The
-same rule applies to recorded playback.
+upstream pull and its ffmpeg process as soon as the last viewer stops watching.
+Closing the tab, changing the grid, logging out, or losing the connection all stop the
+stream. The same rule applies to recorded playback.
 
 ## Features
 
 - **Explicit streaming** — feeds start only when you press **Start** and stop on
   **Stop**, tab hide, navigation, logout, or disconnect.
-- **Bandwidth-aware** — one shared RTSP pull per camera and stream even if several
-  browsers or grid cells watch it; video only (audio is discarded); configurable caps.
+- **Bandwidth-aware** — one shared upstream pull per camera and stream even if
+  several browsers or grid cells watch it; video only (audio is discarded);
+  configurable caps. Works over RTSP or the Hikvision SDK.
 - **Grid layouts** — 1×1, 1×2, 2×1, 2×2 and 3×3; click a cell to assign a camera.
   Layouts and assignments are remembered per device and never auto-start.
-- **Playback** — search a camera's NVR recordings by day, play segments in the
-  browser, or copy their credential-free RTSP URLs for another player.
+- **Playback** — search a camera's NVR recordings by day and play segments in the
+  browser. RTSP recordings also expose credential-free RTSP URLs for another player.
 - **NVR and camera management** — add an NVR by IP/hostname (or an explicit RTSP URL),
-  then add cameras with their ISAPI main and sub stream IDs. Stored in SQLite.
+  choose RTSP + ISAPI or the Hikvision SDK transport, then add cameras with their
+  ISAPI main and sub stream IDs. Stored in SQLite.
 - **Main/Sub switching** — feeds use the substream by default and can switch to the
   main stream per cell while live.
 - **Accounts** — cookie-based login, PBKDF2 password hashes, admin-managed users.
   No public registration.
-- **Self-hosted** — single Docker image, SQLite persistence, no external services.
+- **Self-hosted** — single Docker image (plus an optional private SDK variant),
+  SQLite persistence, no external services.
 - **Simple UI** — Svelte + TypeScript, responsive down to a phone screen.
 
 ## How streaming works
@@ -34,12 +37,20 @@ same rule applies to recorded playback.
 Browsers cannot play RTSP. Peekaboo relays each feed through ffmpeg:
 
 ```text
-RTSP NVR channel ──ffmpeg (copy)──▶ fragmented MP4 ──WebSocket──▶ browser MediaSource
+RTSP NVR channel  ─┐
+                   ├──ffmpeg (copy)──▶ fragmented MP4 ──WebSocket──▶ browser MediaSource
+SDK PS callback  ──┘
                         │
                         └── started by the first viewer, killed with the last
 ```
 
-Peekaboo builds each live-view URL at stream start:
+For an NVR using the **Hikvision SDK** transport, Peekaboo logs in over the NVR's
+private protocol (default port 8000), starts the channel with
+`NET_DVR_RealPlay_V40`, and feeds the resulting MPEG-PS packets into ffmpeg's stdin.
+The SDK login is shared by all streams of that NVR and released as soon as the last
+viewer stops. No RTSP or ISAPI connection is needed for that NVR.
+
+For an RTSP NVR, Peekaboo builds each live-view URL at stream start:
 
 ```text
 rtsp://<NVR host>[:port]/ISAPI/Streaming/channels/<stream ID>
@@ -60,7 +71,10 @@ The stream ID selects both the channel and stream type: `101` is channel 1 main,
 
 ### Recorded playback
 
-Recording search uses the NVR's HTTP(S) ISAPI service, not its RTSP port:
+Recording search uses the NVR's HTTP(S) ISAPI service for RTSP NVRs and the SDK's
+`NET_DVR_FindFile_V50` for SDK NVRs.
+
+For RTSP NVRs:
 
 - Peekaboo derives the NVR host from the stored address and probes
   `http://<host>` (port 80) first, then `https://<host>` (port 443) if HTTP is
@@ -86,8 +100,13 @@ Recording search uses the NVR's HTTP(S) ISAPI service, not its RTSP port:
 - Playback URLs shown in the UI contain the NVR host but **no credentials**. They can
   be copied into VLC or another RTSP player, where the NVR username and password must
   be supplied separately.
-- Playback is segment-based: it starts at the beginning of the selected segment. There
-  is no timeline scrubbing or seeking yet.
+- Playback starts at the selected segment or time. There is no timeline scrubbing or
+  seeking yet.
+
+For SDK NVRs, playback uses `NET_DVR_PlayBackByTime_V50` and the same
+ffmpeg/WebSocket relay. It starts at the requested time, stops at the SDK end marker,
+and has no shareable URL. Playback speed and startup latency depend on the NVR; on some
+models a clip can play slower than real time.
 
 ## Quick start (Docker)
 
@@ -100,6 +119,10 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:8080> and sign in with the admin account from `.env`.
+
+The default image uses RTSP + ISAPI. To use the optional Hikvision SDK transport, copy
+the vendor SDK and set `PEEKABOO_DOCKER_TARGET=runtime-sdk`; see **Optional Hikvision
+SDK** under Development.
 
 The initial admin is created **only while the database has no users**. Later
 `ADMIN_PASSWORD` changes do not reset it; use the Users page or delete the data
@@ -140,11 +163,29 @@ address or hostname:
 192.168.1.64
 ```
 
-Peekaboo uses `rtsp://192.168.1.64:554` for live video and tries
+By default Peekaboo uses `rtsp://192.168.1.64:554` for live video and tries
 `http://192.168.1.64` (port 80) then `https://192.168.1.64` (port 443) for recording
 search. An explicit RTSP URL is also accepted, for example
 `rtsp://192.168.1.64:8554` or `rtsps://192.168.1.64:322`. Do not include a path,
 query, fragment, or credentials — they are rejected.
+
+### Transports
+
+Each NVR uses exactly one transport:
+
+- **RTSP + ISAPI** (default) — live video over the RTSP port; recording search over
+  the NVR's HTTP(S) ISAPI service.
+- **Hikvision SDK** — live video, playback, and recording search over the NVR's
+  private-protocol port (default 8000). The stored address still supplies the host;
+  the RTSP port is unused for this transport. The Peekaboo server must have the
+  proprietary Linux x86-64 SDK installed (see **Optional Hikvision SDK** under
+  Development) and be able to reach the SDK port.
+
+Stream IDs keep the same `channel × 100 + stream type` format. At SDK login Peekaboo
+reads the NVR's channel layout and maps the logical channel to the NVR's
+digital-channel numbering. A pure-IP NVR commonly starts digital channels at 33, so
+stream ID `101` (logical channel 1) maps to SDK channel 33. The mapping is logged at
+debug level.
 
 If the NVR web interface uses a custom HTTP port, set it globally:
 
@@ -170,7 +211,7 @@ channel 1 sub is `102`, and channel 16 main is `1601`.
 Recording search needs an NVR account with remote playback and recording-search
 permissions. Grant those rights in the NVR's user management.
 
-At stream start, Peekaboo builds:
+For RTSP NVRs, at stream start Peekaboo builds:
 
 ```text
 rtsp://192.168.1.64:554/ISAPI/Streaming/channels/101
@@ -183,9 +224,10 @@ CAMERA_USERNAME=viewer
 CAMERA_PASSWORD=secret
 ```
 
-The pair is used for every NVR, for both RTSP streaming and ISAPI recording search.
-Credentials are injected into the built RTSP URL only at stream start and are answered
-only as an HTTP authentication challenge. They never reach the browser and are never
+The pair is used for every NVR, over RTSP, ISAPI, and the SDK. For RTSP they are
+injected into the built URL only at stream start and answered as an HTTP
+authentication challenge. For the SDK they are passed to the login call and the
+password buffer is cleared afterwards. They never reach the browser and are never
 written to SQLite.
 
 > **Feeds default to the substream.** Use the **Sub/Main** switch in a cell to watch
@@ -204,8 +246,8 @@ written to SQLite.
    you are done.
 4. Use **Stop all** to release every stream at once.
 5. Open **Playback**, choose a camera and date, then press **Search recordings**. Use
-   **Play** to watch a segment or **Copy URL** to use the credential-free RTSP URL in
-   another player. **Close** releases the playback stream.
+   **Play** to watch a segment or, for RTSP NVRs, **Copy URL** to use the
+   credential-free RTSP URL in another player. **Close** releases the playback stream.
 6. Playback also stops on tab hide, navigation, camera/date changes, and new searches.
 
 Assignments are stored per layout in this browser's `localStorage`; they survive
@@ -230,13 +272,21 @@ can change their own password under **Account**.
 | `PEEKABOO_RTSP_TRANSPORT` | `tcp` | `tcp` or `udp`. TCP is recommended and more reliable. |
 | `PEEKABOO_ISAPI_HTTP_PORT` | empty | Optional global NVR web/ISAPI HTTP port. Empty probes 80 then 443. |
 | `PEEKABOO_ISAPI_INSECURE_TLS` | `false` | Accept self-signed HTTPS certificates for NVR ISAPI. Trusted networks only. |
+| `PEEKABOO_HIK_SDK_PATH` | empty | Directory that directly contains `libhcnetsdk.so` and `HCNetSDKCom` (the SDK `lib` directory). Empty disables the SDK transport. |
+| `PEEKABOO_HIK_SDK_CONNECT_TIMEOUT_MS` | `3000` | SDK connect timeout, 1–60000 ms. |
+| `PEEKABOO_HIK_SDK_RECONNECT_MS` | `10000` | SDK reconnect interval, 1–300000 ms. |
+| `PEEKABOO_HIK_SDK_LOG_LEVEL` | `0` | SDK file log level; `0` disables SDK logging. |
+| `PEEKABOO_HIK_SDK_LOG_DIR` | empty | Writable directory for SDK logs; set together with the log level. |
+| `PEEKABOO_DOCKER_TARGET` | `runtime` | Compose build target: `runtime` (no SDK) or `runtime-sdk` (private SDK image). |
 | `PEEKABOO_TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 | `PEEKABOO_FFMPEG_PATH` | `ffmpeg` | ffmpeg binary; mainly useful in development. |
 | `PEEKABOO_PORT` | `8080` | Host port published by `docker-compose.yml`. |
 | `PEEKABOO_IMAGE` | `peekaboo:local` | Image used by `docker-compose.yml`. |
 
-Invalid stream limits, an invalid ISAPI port or TLS setting, or a half-configured NVR
-credential pair fail fast at startup with an explanatory error.
+Invalid stream limits, an invalid ISAPI port or TLS setting, an invalid numeric SDK
+setting, or a half-configured NVR credential pair fail fast at startup with an
+explanatory error. A missing SDK installation is reported only when an NVR configured
+for the SDK transport is used, so RTSP-only deployments do not need the SDK.
 
 ## Reverse proxy and HTTPS
 
@@ -291,6 +341,51 @@ Useful tasks:
 | `mise run docker:build` | Build the image tagged for `PEEKABOO_REGISTRY`. |
 | `mise run docker:publish` | Push that image. |
 
+### Optional Hikvision SDK
+
+The SDK-based NVR transport uses Hikvision's proprietary Linux x86-64 SDK. It is not
+distributed with Peekaboo and must not be committed to this public repository. Download
+the Linux SDK (tested with `EN-HCNetSDKV6.1.11.40_build20260922_linux64`) from
+Hikvision, then copy its `lib` directory into the gitignored `vendor/hikvision`
+directory. That directory must directly contain `libhcnetsdk.so` and `HCNetSDKCom`:
+
+```bash
+mkdir -p vendor/hikvision
+cp -a /path/to/EN-HCNetSDKV6.1.11.40_build20260922_linux64/lib/. vendor/hikvision/
+export PEEKABOO_HIK_SDK_PATH="$PWD/vendor/hikvision"
+mise run dev
+```
+
+`scripts/dev.sh` adds the SDK directory and its `HCNetSDKCom` subdirectory to
+`LD_LIBRARY_PATH`. If you start the API by hand, do the same or the SDK's component
+libraries will fail to load.
+
+For the private Docker image, set the target in `.env` and rebuild:
+
+```env
+PEEKABOO_DOCKER_TARGET=runtime-sdk
+```
+
+```bash
+docker compose build
+docker compose up -d --force-recreate
+```
+
+The default `runtime` target contains no SDK and is the safe image for public builds.
+Switching targets reuses the same image tag, so always rebuild after changing
+`PEEKABOO_DOCKER_TARGET`.
+
+Real-NVR integration tests are opt-in and skipped in CI:
+
+```bash
+PEEKABOO_HIK_INTEGRATION=1 \
+PEEKABOO_HIK_SDK_PATH="$PWD/vendor/hikvision" \
+HIK_TEST_NVR=192.168.10.60 \
+CAMERA_USERNAME=viewer CAMERA_PASSWORD=secret \
+LD_LIBRARY_PATH="$PWD/vendor/hikvision:$PWD/vendor/hikvision/HCNetSDKCom" \
+dotnet test backend/Peekaboo.slnx --filter "FullyQualifiedName~HikvisionIntegrationTests"
+```
+
 ### End-to-end tests
 
 `mise run e2e` starts MediaMTX (downloaded, checksum-verified and cached under
@@ -329,8 +424,9 @@ stay in `mise.local.toml`, which is gitignored.
 - CSP, `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy` headers are
   set by the server.
 - NVR credentials live only in the server environment, the short-lived ffmpeg process
-  arguments, and HTTP authentication challenges for ISAPI recording search. They are
-  not stored in SQLite or sent to the browser.
+  arguments, HTTP authentication challenges for ISAPI recording search, and the SDK
+  login struct (cleared after login). They are not stored in SQLite or sent to the
+  browser.
 - ffmpeg is started with an argument list (no shell). NVR addresses are host-only — a
   bare IP/hostname or an `rtsp://`/`rtsps://` URL — with paths, queries, fragments, and
   embedded credentials rejected.
@@ -361,16 +457,24 @@ See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 - No in-app recording, export/download, motion detection, PTZ controls, or automatic
   reconnect (reconnect is deliberately manual so a stopped stream cannot start itself).
 - No automatic NVR channel discovery; add camera stream IDs manually.
-- Recording search requires the NVR's HTTP(S) ISAPI service to be reachable from the
-  Peekaboo server, and the NVR account needs remote playback/recording-search rights.
-  A custom web port is global via `PEEKABOO_ISAPI_HTTP_PORT`; HTTPS on a non-standard
-  port is not supported, and self-signed HTTPS certificates need
-  `PEEKABOO_ISAPI_INSECURE_TLS=true`.
+- For RTSP NVRs, recording search requires the NVR's HTTP(S) ISAPI service to be
+  reachable from the Peekaboo server, and the NVR account needs remote
+  playback/recording-search rights. A custom web port is global via
+  `PEEKABOO_ISAPI_HTTP_PORT`; HTTPS on a non-standard port is not supported, and
+  self-signed HTTPS certificates need `PEEKABOO_ISAPI_INSECURE_TLS=true`.
+- The Hikvision SDK transport is optional, proprietary, and only available on Linux
+  x86-64. The default image and public repository do not include it. The NVR's private
+  protocol port (default 8000) must be reachable.
+- SDK live view and playback still pass through ffmpeg and remain H.264-only. SDK
+  playback speed and startup latency depend on the NVR and can be slower than real
+  time; SDK recordings have no shareable URL.
+- SDK recording search returns file-level segments and does not report a codec type.
 - A search can span at most 31 days and returns at most 1,000 segments; a single
   playback stream can span at most 24 hours.
-- Playback is segment-based with no timeline scrubbing or seeking yet.
-- Playback URLs are credential-free. Opening one in VLC or another player requires the
-  NVR username and password separately.
+- Playback starts at the selected segment or time; there is no timeline scrubbing or
+  seeking yet.
+- RTSP playback URLs are credential-free. Opening one in VLC or another player
+  requires the NVR username and password separately. SDK playback has no URL.
 - One global NVR credential pair for now.
 - Live main/sub and recorded playback count toward the same `PEEKABOO_MAX_STREAMS`.
 - Live main and sub streams of the same camera count as two concurrent streams.

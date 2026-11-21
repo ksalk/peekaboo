@@ -35,6 +35,9 @@ and Chrome/Chromium with H.264 support, and uses ports 8555, 5080 and 5173.
   covered by the Playwright suite.
 - Never commit secrets, `.env` files, databases, generated certificates, or
   `mise.local.toml`.
+- Never commit the proprietary Hikvision SDK. It belongs in the gitignored
+  `vendor/hikvision` directory and only in the optional private `runtime-sdk` image.
+  Real-NVR tests are opt-in through `PEEKABOO_HIK_INTEGRATION`.
 - Keep commits focused and use one-line messages in the existing style
   (`feat: ...`, `fix: ...`, `test: ...`, `docs: ...`).
 
