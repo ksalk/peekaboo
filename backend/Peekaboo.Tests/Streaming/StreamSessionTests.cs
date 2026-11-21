@@ -80,6 +80,7 @@ public sealed class StreamSessionTests : IDisposable
         var arguments = await File.ReadAllLinesAsync(argsPath);
         Assert.Contains("mpeg", arguments);
         Assert.Contains("pipe:0", arguments);
+        Assert.Contains(arguments, argument => argument.Contains("frag_keyframe", StringComparison.Ordinal));
         Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
 
         await session.StopAsync(errorMessage: null);
@@ -125,6 +126,7 @@ public sealed class StreamSessionTests : IDisposable
         Assert.Contains("pipe:0", arguments);
         Assert.Contains("-t", arguments);
         Assert.Contains("300", arguments);
+        Assert.Contains(arguments, argument => argument.Contains("frag_every_frame", StringComparison.Ordinal));
         Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
 
         await session.StopAsync(errorMessage: null);

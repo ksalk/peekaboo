@@ -302,8 +302,12 @@ internal sealed class StreamSession
         return _source switch
         {
             RtspStreamSource => BuildRtspArguments(durationArguments),
-            HikvisionLiveStreamSource or HikvisionPlaybackStreamSource =>
-                BuildSdkArguments(durationArguments),
+            HikvisionLiveStreamSource => BuildSdkArguments(
+                durationArguments,
+                perFrameFragments: false),
+            HikvisionPlaybackStreamSource => BuildSdkArguments(
+                durationArguments,
+                perFrameFragments: true),
             _ => throw new ArgumentException(
                 $"Unsupported stream source type {_source.GetType().Name}.",
                 nameof(_source)),
@@ -330,7 +334,9 @@ internal sealed class StreamSession
         "pipe:1",
     ];
 
-    private static string[] BuildSdkArguments(string[] durationArguments) =>
+    private static string[] BuildSdkArguments(
+        string[] durationArguments,
+        bool perFrameFragments) =>
     [
         "-hide_banner",
         "-loglevel", "error",
@@ -345,7 +351,9 @@ internal sealed class StreamSession
         .. durationArguments,
         "-c:v", "copy",
         "-f", "mp4",
-        "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+        "-movflags", perFrameFragments
+            ? "empty_moov+default_base_moof+frag_every_frame"
+            : "empty_moov+default_base_moof+frag_keyframe",
         "-flush_packets", "1",
         "pipe:1",
     ];
