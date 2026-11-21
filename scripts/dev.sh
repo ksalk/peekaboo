@@ -9,6 +9,10 @@ export PEEKABOO_DB_PATH="${PEEKABOO_DB_PATH:-$PWD/data/peekaboo.db}"
 export ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-peekaboo-dev-password}"
 
+if [[ -n "${PEEKABOO_HIK_SDK_PATH:-}" ]]; then
+  export LD_LIBRARY_PATH="${PEEKABOO_HIK_SDK_PATH}:${PEEKABOO_HIK_SDK_PATH}/HCNetSDKCom${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
 echo "Peekaboo dev: http://127.0.0.1:5173 (API http://127.0.0.1:5080)"
 echo "Admin login: ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
 

@@ -50,9 +50,11 @@ internal static unsafe class HikvisionNative
         string? logDirectory,
         int autoDelete);
 
+    // The login info is passed as unmanaged memory so the password copy can be
+    // zeroed after the call. Do not change this to ref NetDvrUserLoginInfo.
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     public static extern int NET_DVR_Login_V40(
-        ref NetDvrUserLoginInfo loginInfo,
+        IntPtr loginInfo,
         ref NetDvrDeviceInfoV40 deviceInfo);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
