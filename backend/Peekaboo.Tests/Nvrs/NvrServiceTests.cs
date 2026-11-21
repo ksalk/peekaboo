@@ -32,12 +32,21 @@ public sealed class NvrServiceTests : IDisposable
         Assert.Equal(created.Id, listed.Id);
         Assert.Equal("House NVR", listed.Name);
         Assert.Equal("rtsp://192.168.1.64:554", listed.BaseUrl);
+        Assert.Equal(NvrTransports.Rtsp, listed.Transport);
+        Assert.Equal(NvrTransports.DefaultSdkPort, listed.SdkPort);
 
-        var updated = _nvrs.Update(created.Id, "Garage NVR", "rtsps://192.168.1.65:322");
+        var updated = _nvrs.Update(
+            created.Id,
+            "Garage NVR",
+            "rtsps://192.168.1.65:322",
+            NvrTransports.HikvisionSdk,
+            8001);
 
         Assert.NotNull(updated);
         Assert.Equal("Garage NVR", updated.Name);
         Assert.Equal("rtsps://192.168.1.65:322", updated.BaseUrl);
+        Assert.Equal(NvrTransports.HikvisionSdk, updated.Transport);
+        Assert.Equal(8001, updated.SdkPort);
         Assert.Equal(created.CreatedAt, updated.CreatedAt);
         Assert.True(updated.UpdatedAt >= created.UpdatedAt);
 
@@ -80,6 +89,52 @@ public sealed class NvrServiceTests : IDisposable
     public void Name_is_required(string? name)
     {
         Assert.NotNull(NvrValidation.NameError(name));
+    }
+
+    [Theory]
+    [InlineData(NvrTransports.Rtsp, true)]
+    [InlineData(NvrTransports.HikvisionSdk, true)]
+    [InlineData("rtsp ", false)]
+    [InlineData("SDK", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Transport_validation_accepts_only_known_values(string? transport, bool valid)
+    {
+        var error = NvrValidation.TransportError(transport);
+        Assert.Equal(valid, error is null);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(8000, true)]
+    [InlineData(65535, true)]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    [InlineData(65536, false)]
+    public void Sdk_port_validation_accepts_a_valid_tcp_port(int port, bool valid)
+    {
+        var error = NvrValidation.SdkPortError(port);
+        Assert.Equal(valid, error is null);
+    }
+
+    [Fact]
+    public void Create_rejects_an_unknown_transport()
+    {
+        Assert.Throws<ArgumentException>(
+            () => _nvrs.Create("House NVR", "rtsp://192.168.1.64:554", "bogus"));
+        Assert.Empty(_nvrs.List());
+    }
+
+    [Fact]
+    public void Create_rejects_an_invalid_sdk_port()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => _nvrs.Create(
+                "House NVR",
+                "rtsp://192.168.1.64:554",
+                NvrTransports.HikvisionSdk,
+                0));
+        Assert.Empty(_nvrs.List());
     }
 
     [Fact]

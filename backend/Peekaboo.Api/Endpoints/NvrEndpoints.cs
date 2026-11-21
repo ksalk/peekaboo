@@ -67,7 +67,9 @@ public static class NvrEndpoints
         var updated = nvrs.Update(
             id,
             request.Name!.Trim(),
-            NvrValidation.NormalizeBaseUrl(request.BaseUrl!));
+            NvrValidation.NormalizeBaseUrl(request.BaseUrl!),
+            existing.Transport,
+            existing.SdkPort);
 
         if (updated is null)
         {

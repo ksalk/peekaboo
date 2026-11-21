@@ -4,8 +4,20 @@ public sealed record NvrDto(
     string Id,
     string Name,
     string BaseUrl,
+    string Transport,
+    int SdkPort,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+public static class NvrTransports
+{
+    public const string Rtsp = "rtsp";
+    public const string HikvisionSdk = "sdk";
+    public const int DefaultSdkPort = 8000;
+
+    public static bool IsValid(string? transport) =>
+        transport is Rtsp or HikvisionSdk;
+}
 
 public static class NvrValidation
 {
@@ -98,6 +110,16 @@ public static class NvrValidation
             ? null
             : "NVR address must not contain a path; use the host and RTSP port only.";
     }
+
+    public static string? TransportError(string? transport) =>
+        NvrTransports.IsValid(transport)
+            ? null
+            : $"NVR transport must be '{NvrTransports.Rtsp}' or '{NvrTransports.HikvisionSdk}'.";
+
+    public static string? SdkPortError(int sdkPort) =>
+        sdkPort is >= 1 and <= 65535
+            ? null
+            : "The SDK port must be between 1 and 65535.";
 
     /// <summary>
     /// Returns the canonical stored form: lowercase scheme and authority only. A bare

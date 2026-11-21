@@ -20,7 +20,7 @@ public sealed class AppDatabaseTests : IDisposable
 
         using var connection = database.Open();
 
-        Assert.Equal(2L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(3L, ExecuteScalar(connection, "PRAGMA user_version"));
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
         using (var command = connection.CreateCommand())
@@ -44,6 +44,10 @@ public sealed class AppDatabaseTests : IDisposable
         Assert.Contains("main_stream_id", cameraColumns);
         Assert.Contains("sub_stream_id", cameraColumns);
         Assert.DoesNotContain("url", cameraColumns);
+
+        var nvrColumns = Columns(connection, "nvrs");
+        Assert.Contains("transport", nvrColumns);
+        Assert.Contains("sdk_port", nvrColumns);
     }
 
     [Fact]
@@ -71,9 +75,45 @@ public sealed class AppDatabaseTests : IDisposable
         database.Initialize(NullLogger<AppDatabase>.Instance);
 
         using var connection = database.Open();
-        Assert.Equal(2L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(3L, ExecuteScalar(connection, "PRAGMA user_version"));
         Assert.Equal(0L, ExecuteScalar(connection, "SELECT COUNT(*) FROM cameras"));
         Assert.Contains("nvr_id", Columns(connection, "cameras"));
+        Assert.Contains("transport", Columns(connection, "nvrs"));
+    }
+
+    [Fact]
+    public void Migration_backfills_transport_defaults_for_existing_nvrs()
+    {
+        var path = Path.Combine(_directory, "backfill.db");
+        var initialMigrations = MigrationRunner.LoadMigrations()
+            .Where(migration => migration.Version <= 2)
+            .Select(migration => migration.Sql);
+
+        using (var legacy = new SqliteConnection($"Data Source={path}"))
+        {
+            legacy.Open();
+            using var command = legacy.CreateCommand();
+            command.CommandText = string.Join("\n", initialMigrations) + """
+
+                INSERT INTO nvrs (id, name, base_url, created_at, updated_at)
+                VALUES ('old', 'Legacy NVR', 'rtsp://legacy.local:554',
+                        '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                PRAGMA user_version = 2;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var database = new AppDatabase(path);
+        database.Initialize(NullLogger<AppDatabase>.Instance);
+
+        using var connection = database.Open();
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT transport, sdk_port FROM nvrs WHERE id = 'old'";
+        using var reader = read.ExecuteReader();
+
+        Assert.True(reader.Read());
+        Assert.Equal("rtsp", reader.GetString(0));
+        Assert.Equal(8000, reader.GetInt32(1));
     }
 
     [Fact]
