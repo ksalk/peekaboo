@@ -17,14 +17,14 @@ public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
             return null;
         }
 
-        return new StreamSource(
+        return new RtspStreamSource(
             IsapiPlaybackUrl.Build(
                 source.RtspBaseUrl,
                 source.MainStreamId,
                 start,
                 end),
-            MaximumDuration: end - start,
-            IsPlayback: true);
+            Playback: true,
+            Duration: end - start);
     }
 
     public async Task<RecordingSearchDto?> SearchAsync(

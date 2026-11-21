@@ -43,19 +43,23 @@ internal sealed class StreamSession
 
     public StreamSession(
         StreamKey key,
-        string cameraUrl,
-        TimeSpan? maximumDuration,
-        bool isPlayback,
+        StreamSource source,
         StreamOptions options,
         CameraCredentials credentials,
         ILogger logger,
         Action<StreamSession> onTerminated)
     {
         Key = key;
-        _safeUrl = cameraUrl;
-        _streamUrl = credentials.Resolve(cameraUrl);
-        _maximumDuration = maximumDuration;
-        _isPlayback = isPlayback;
+        _safeUrl = source switch
+        {
+            RtspStreamSource rtsp => rtsp.Url,
+            _ => throw new ArgumentException(
+                $"Unsupported stream source type {source.GetType().Name}.",
+                nameof(source)),
+        };
+        _streamUrl = credentials.Resolve(_safeUrl);
+        _maximumDuration = source.MaximumDuration;
+        _isPlayback = source.IsPlayback;
         _options = options;
         _credentials = credentials;
         _logger = logger;

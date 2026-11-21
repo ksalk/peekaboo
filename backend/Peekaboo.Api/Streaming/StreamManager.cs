@@ -68,9 +68,7 @@ public sealed class StreamManager(
                 {
                     session = new StreamSession(
                         key,
-                        source.Url,
-                        source.MaximumDuration,
-                        source.IsPlayback,
+                        source,
                         options,
                         credentials,
                         logger,

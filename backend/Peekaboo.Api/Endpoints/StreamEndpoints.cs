@@ -56,7 +56,7 @@ public static class StreamEndpoints
             () =>
             {
                 var current = cameras.GetStreamTarget(id, cameraStream);
-                return current is null ? null : new StreamSource(current.Url);
+                return current is null ? null : new RtspStreamSource(current.Url);
             },
             socket,
             context.RequestAborted);

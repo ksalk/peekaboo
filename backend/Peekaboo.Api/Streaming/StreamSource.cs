@@ -1,13 +1,30 @@
 namespace Peekaboo.Api.Streaming;
 
 /// <summary>
-/// The resolved upstream URL for one stream session. The URL never contains
-/// credentials; <see cref="StreamSession"/> injects them when ffmpeg starts.
+/// An upstream video source for one stream session. Every source must identify
+/// its playback status and optional maximum duration so the session can enforce
+/// the existing watchdog and stream-limit behavior.
 /// </summary>
-public sealed record StreamSource(
+public abstract record StreamSource
+{
+    public abstract bool IsPlayback { get; }
+
+    public abstract TimeSpan? MaximumDuration { get; }
+}
+
+/// <summary>
+/// An RTSP URL whose credentials are injected only at process start. The URL must
+/// never contain credentials when it is stored in this source.
+/// </summary>
+public sealed record RtspStreamSource(
     string Url,
-    TimeSpan? MaximumDuration = null,
-    bool IsPlayback = false);
+    bool Playback = false,
+    TimeSpan? Duration = null) : StreamSource
+{
+    public override bool IsPlayback => Playback;
+
+    public override TimeSpan? MaximumDuration => Duration;
+}
 
 /// <summary>
 /// Canonical stream-kind values used in <see cref="StreamKey"/>. Keys are compared
