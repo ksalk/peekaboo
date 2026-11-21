@@ -208,6 +208,58 @@ public sealed class HikvisionIntegrationTests
         Assert.Contains("000001BA", head, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Recording_search_returns_segments()
+    {
+        if (!IsEnabled())
+        {
+            return;
+        }
+
+        var configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .Build();
+        var options = HikvisionSdkOptions.FromConfiguration(configuration);
+        using var runtime = new HikvisionSdkRuntime(
+            options,
+            NullLogger<HikvisionSdkRuntime>.Instance);
+        var loginApi = new HikvisionLoginApi(
+            CameraCredentials.FromConfiguration(configuration),
+            runtime,
+            NullLogger<HikvisionLoginApi>.Instance);
+        await using var pool = new HikvisionConnectionPool(
+            loginApi,
+            NullLogger<HikvisionConnectionPool>.Instance);
+        var search = new HikvisionRecordingSearch(
+            pool,
+            NullLogger<HikvisionRecordingSearch>.Instance);
+
+        var host = Environment.GetEnvironmentVariable("HIK_TEST_NVR")
+            ?? throw new InvalidOperationException("HIK_TEST_NVR is required.");
+        var port = int.TryParse(
+            Environment.GetEnvironmentVariable("HIK_TEST_PORT"),
+            out var parsedPort)
+            ? parsedPort
+            : 8000;
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+
+        var result = await search.SearchAsync(
+            new HikvisionSearchRequest(
+                "integration",
+                host,
+                port,
+                "101",
+                start,
+                start.AddMinutes(5)),
+            CancellationToken.None);
+
+        Assert.NotEmpty(result.Segments);
+        Assert.All(result.Segments, segment => Assert.True(segment.End > segment.Start));
+        Assert.Contains(
+            result.Segments,
+            segment => segment.Start < start.AddMinutes(5) && segment.End > start);
+    }
+
     private sealed class CountingStream : Stream
     {
         private const int HeadLimit = 4096;

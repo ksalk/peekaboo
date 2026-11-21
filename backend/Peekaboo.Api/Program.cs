@@ -45,11 +45,17 @@ builder.Services.AddSingleton(HikvisionSdkOptions.FromConfiguration(builder.Conf
 builder.Services.AddSingleton<HikvisionSdkRuntime>();
 builder.Services.AddSingleton<IHikvisionLoginApi, HikvisionLoginApi>();
 builder.Services.AddSingleton<HikvisionConnectionPool>();
+builder.Services.AddSingleton<IHikvisionRecordingSearch>(services => new HikvisionRecordingSearch(
+    services.GetRequiredService<HikvisionConnectionPool>(),
+    services.GetRequiredService<ILogger<HikvisionRecordingSearch>>()));
 builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
-builder.Services.AddSingleton<PlaybackService>();
+builder.Services.AddSingleton(services => new PlaybackService(
+    services.GetRequiredService<CameraService>(),
+    services.GetRequiredService<IIsapiClient>(),
+    services.GetRequiredService<IHikvisionRecordingSearch>()));
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<StreamSourceFactory>();
 builder.Services.AddSingleton<IStreamInputFactory>(services => new HikvisionStreamInputFactory(

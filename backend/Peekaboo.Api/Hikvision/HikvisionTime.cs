@@ -27,6 +27,34 @@ internal static class HikvisionTime
         };
     }
 
+    public static DateTimeOffset FromSearch(NetDvrTimeSearch value)
+    {
+        var offsetMinutes = value.byLocalOrUTC == 1
+            ? (value.cTimeDifferenceH * 60) + value.cTimeDifferenceM
+            : 0;
+        offsetMinutes = Math.Clamp(offsetMinutes, -14 * 60, 14 * 60);
+
+        try
+        {
+            return new DateTimeOffset(
+                    value.wYear,
+                    value.byMonth,
+                    value.byDay,
+                    value.byHour,
+                    value.byMinute,
+                    value.bySecond,
+                    TimeSpan.FromMinutes(offsetMinutes))
+                .AddMilliseconds(value.wMillisecond);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new HikvisionException(
+                "The NVR returned an invalid recording timestamp.",
+                HikvisionFailureKind.Device,
+                innerException: exception);
+        }
+    }
+
     public static NetDvrTimeSearchCond ToSearchCond(DateTimeOffset value)
     {
         var utc = value.UtcDateTime;

@@ -1,4 +1,5 @@
 using Peekaboo.Api.Cameras;
+using Peekaboo.Api.Hikvision;
 using Peekaboo.Api.Isapi;
 using Peekaboo.Api.Playback;
 using Peekaboo.Api.Streaming;
@@ -105,7 +106,39 @@ public static class PlaybackEndpoints
 
             return MapIsapiFailure(exception);
         }
+        catch (HikvisionException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "SDK recording search for camera {CameraId} failed with {FailureKind}",
+                id,
+                exception.Kind);
+
+            return MapHikvisionFailure(exception);
+        }
     }
+
+    private static IResult MapHikvisionFailure(HikvisionException exception) =>
+        exception.Kind switch
+        {
+            HikvisionFailureKind.Authentication or HikvisionFailureKind.Permission =>
+                Results.Problem(
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "The NVR rejected the SDK credentials or permissions. Check " +
+                           "CAMERA_USERNAME, CAMERA_PASSWORD, and the NVR user's rights."),
+            HikvisionFailureKind.Timeout => Results.Problem(
+                statusCode: StatusCodes.Status504GatewayTimeout,
+                title: "The NVR did not answer the SDK recording search in time."),
+            HikvisionFailureKind.Channel => Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "The camera's main stream ID is not valid for the SDK transport."),
+            HikvisionFailureKind.Unavailable => Results.Problem(
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Could not reach the NVR SDK service."),
+            _ => Results.Problem(
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "The NVR reported an error while searching recordings with the SDK."),
+        };
 
     private static IResult MapIsapiFailure(IsapiException exception) =>
         exception.Kind switch

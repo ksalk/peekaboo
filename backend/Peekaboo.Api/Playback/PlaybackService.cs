@@ -6,14 +6,27 @@ using Peekaboo.Api.Streaming;
 
 namespace Peekaboo.Api.Playback;
 
-public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
+public sealed class PlaybackService
 {
+    private readonly CameraService _cameras;
+    private readonly IIsapiClient _isapi;
+    private readonly IHikvisionRecordingSearch _hikvisionSearch;
+
+    internal PlaybackService(
+        CameraService cameras,
+        IIsapiClient isapi,
+        IHikvisionRecordingSearch hikvisionSearch)
+    {
+        _cameras = cameras;
+        _isapi = isapi;
+        _hikvisionSearch = hikvisionSearch;
+    }
     public StreamSource? GetStreamSource(
         string cameraId,
         DateTimeOffset start,
         DateTimeOffset end)
     {
-        var source = cameras.GetPlaybackSource(cameraId);
+        var source = _cameras.GetPlaybackSource(cameraId);
         if (source is null)
         {
             return null;
@@ -53,9 +66,8 @@ public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
                 end);
         }
 
-        throw new HikvisionException(
-            $"NVR transport '{source.NvrTransport}' is not supported.",
-            HikvisionFailureKind.Unavailable);
+        throw new InvalidOperationException(
+            $"NVR transport '{source.NvrTransport}' is not supported.");
     }
 
     public async Task<RecordingSearchDto?> SearchAsync(
@@ -64,13 +76,40 @@ public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
         DateTimeOffset end,
         CancellationToken cancellationToken)
     {
-        var source = cameras.GetPlaybackSource(cameraId);
+        var source = _cameras.GetPlaybackSource(cameraId);
         if (source is null)
         {
             return null;
         }
 
-        var result = await isapi.SearchRecordingsAsync(
+        if (source.NvrTransport == NvrTransports.HikvisionSdk)
+        {
+            var sdkResult = await _hikvisionSearch.SearchAsync(
+                new HikvisionSearchRequest(
+                    source.NvrId,
+                    source.NvrHost,
+                    source.SdkPort,
+                    source.MainStreamId,
+                    start,
+                    end),
+                cancellationToken);
+
+            return new RecordingSearchDto(
+                source.CameraId,
+                source.CameraName,
+                start,
+                end,
+                sdkResult.Truncated,
+                sdkResult.Segments.Select(ToSdkRecording).ToList());
+        }
+
+        if (source.NvrTransport != NvrTransports.Rtsp)
+        {
+            throw new InvalidOperationException(
+                $"NVR transport '{source.NvrTransport}' is not supported.");
+        }
+
+        var result = await _isapi.SearchRecordingsAsync(
             new IsapiSearchRequest(
                 source.NvrId,
                 source.RtspBaseUrl,
@@ -107,5 +146,19 @@ public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
             end,
             result.Truncated,
             recordings);
+    }
+
+    private static RecordingSegmentDto ToSdkRecording(HikvisionRecordingSegment segment)
+    {
+        var durationSeconds = (int)Math.Round(
+            (segment.End - segment.Start).TotalSeconds,
+            MidpointRounding.AwayFromZero);
+
+        return new RecordingSegmentDto(
+            segment.Start,
+            segment.End,
+            Math.Max(0, durationSeconds),
+            CodecType: null,
+            PlaybackUrl: string.Empty);
     }
 }

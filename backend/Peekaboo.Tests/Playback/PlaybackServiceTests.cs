@@ -19,6 +19,8 @@ public sealed class PlaybackServiceTests : IDisposable
     private readonly AppDatabase _database;
     private readonly NvrService _nvrs;
     private readonly CameraService _cameras;
+    private readonly FakeIsapiClient _isapi = new();
+    private readonly FakeHikvisionSearch _sdkSearch = new();
     private readonly PlaybackService _playbacks;
 
     public PlaybackServiceTests()
@@ -27,7 +29,7 @@ public sealed class PlaybackServiceTests : IDisposable
         _database.Initialize(NullLogger<AppDatabase>.Instance);
         _nvrs = new NvrService(_database);
         _cameras = new CameraService(_database);
-        _playbacks = new PlaybackService(_cameras, new EmptyIsapiClient());
+        _playbacks = new PlaybackService(_cameras, _isapi, _sdkSearch);
     }
 
     [Fact]
@@ -90,12 +92,102 @@ public sealed class PlaybackServiceTests : IDisposable
         Assert.Equal(HikvisionFailureKind.Channel, exception.Kind);
     }
 
-    private sealed class EmptyIsapiClient : IIsapiClient
+    [Fact]
+    public async Task Sdk_search_uses_the_sdk_client_and_returns_no_playback_url()
     {
+        var nvr = _nvrs.Create(
+            "SDK NVR",
+            "rtsp://192.168.10.60:554",
+            NvrTransports.HikvisionSdk,
+            8000);
+        var camera = _cameras.Create(nvr.Id, "Front door", "101", "102");
+        Assert.NotNull(camera);
+
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+        var end = start.AddMinutes(5);
+        var segmentStart = start.AddMinutes(1);
+        var segmentEnd = segmentStart.AddSeconds(30);
+        _sdkSearch.Result = new HikvisionSearchResult(
+            [new HikvisionRecordingSegment(segmentStart, segmentEnd, "file.mp4")],
+            Truncated: false);
+
+        var result = await _playbacks.SearchAsync(camera.Id, start, end, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.Truncated);
+        var recording = Assert.Single(result.Recordings);
+        Assert.Equal(segmentStart, recording.Start);
+        Assert.Equal(segmentEnd, recording.End);
+        Assert.Equal(30, recording.DurationSeconds);
+        Assert.Null(recording.CodecType);
+        Assert.Equal(string.Empty, recording.PlaybackUrl);
+        Assert.Equal(0, _isapi.CallCount);
+
+        Assert.NotNull(_sdkSearch.LastRequest);
+        Assert.Equal(nvr.Id, _sdkSearch.LastRequest.NvrId);
+        Assert.Equal("192.168.10.60", _sdkSearch.LastRequest.Host);
+        Assert.Equal(8000, _sdkSearch.LastRequest.SdkPort);
+        Assert.Equal("101", _sdkSearch.LastRequest.MainStreamId);
+        Assert.Equal(start, _sdkSearch.LastRequest.Start);
+        Assert.Equal(end, _sdkSearch.LastRequest.End);
+    }
+
+    [Fact]
+    public async Task Rtsp_search_uses_isapi_and_keeps_the_playback_url()
+    {
+        var nvr = _nvrs.Create("House NVR", "rtsp://192.168.10.60:554");
+        var camera = _cameras.Create(nvr.Id, "Front door", "101", "102");
+        Assert.NotNull(camera);
+
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+        var end = start.AddMinutes(5);
+        var segmentStart = start.AddMinutes(1);
+        var segmentEnd = segmentStart.AddSeconds(30);
+        _isapi.Result = new IsapiSearchResult(
+            [new IsapiRecordingSegment(segmentStart, segmentEnd, "H.264")],
+            Truncated: false);
+
+        var result = await _playbacks.SearchAsync(camera.Id, start, end, CancellationToken.None);
+
+        Assert.NotNull(result);
+        var recording = Assert.Single(result.Recordings);
+        Assert.Equal(segmentStart, recording.Start);
+        Assert.Equal(segmentEnd, recording.End);
+        Assert.Equal(30, recording.DurationSeconds);
+        Assert.Equal("H.264", recording.CodecType);
+        Assert.Contains("/ISAPI/Streaming/tracks/101", recording.PlaybackUrl, StringComparison.Ordinal);
+        Assert.Equal(1, _isapi.CallCount);
+        Assert.Null(_sdkSearch.LastRequest);
+    }
+
+    private sealed class FakeHikvisionSearch : IHikvisionRecordingSearch
+    {
+        public HikvisionSearchRequest? LastRequest { get; private set; }
+
+        public HikvisionSearchResult Result { get; set; } = new([], Truncated: false);
+
+        public Task<HikvisionSearchResult> SearchAsync(
+            HikvisionSearchRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class FakeIsapiClient : IIsapiClient
+    {
+        public int CallCount { get; private set; }
+
+        public IsapiSearchResult Result { get; set; } = new([], Truncated: false);
+
         public Task<IsapiSearchResult> SearchRecordingsAsync(
             IsapiSearchRequest request,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new IsapiSearchResult([], Truncated: false));
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(Result);
+        }
     }
 
     public void Dispose()

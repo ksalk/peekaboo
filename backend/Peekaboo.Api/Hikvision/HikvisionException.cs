@@ -13,8 +13,12 @@ internal enum HikvisionFailureKind
 
 internal sealed class HikvisionException : Exception
 {
-    public HikvisionException(string message, HikvisionFailureKind kind, uint errorCode = 0)
-        : base(message)
+    public HikvisionException(
+        string message,
+        HikvisionFailureKind kind,
+        uint errorCode = 0,
+        Exception? innerException = null)
+        : base(message, innerException)
     {
         Kind = kind;
         ErrorCode = errorCode;
