@@ -7,6 +7,8 @@ namespace Peekaboo.Api.Hikvision;
 internal static class HikvisionConstants
 {
     public const int NetSdkInitCfgSdkPath = 2;
+    public const int NetSdkInitCfgLibcryptoPath = 3;
+    public const int NetSdkInitCfgLibsslPath = 4;
     public const int NetSdkLocalCfgTypeStreamCallback = 16;
 
     public const int NetDvrPlayStart = 1;

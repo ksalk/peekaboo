@@ -18,6 +18,11 @@ internal static unsafe class HikvisionNative
         int enumType,
         ref NetDvrLocalSdkPath lpInBuff);
 
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    public static extern int NET_DVR_SetSDKInitCfg(
+        int enumType,
+        string lpInBuff);
+
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     public static extern int NET_DVR_SetSDKLocalCfg(
         int enumType,

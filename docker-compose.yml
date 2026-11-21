@@ -6,6 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: ${PEEKABOO_DOCKER_TARGET:-runtime}
     ports:
       - "${PEEKABOO_PORT:-8080}:8080"
     environment:
@@ -19,6 +20,8 @@ services:
       PEEKABOO_RTSP_TRANSPORT: ${PEEKABOO_RTSP_TRANSPORT:-tcp}
       PEEKABOO_ISAPI_HTTP_PORT: ${PEEKABOO_ISAPI_HTTP_PORT:-}
       PEEKABOO_ISAPI_INSECURE_TLS: ${PEEKABOO_ISAPI_INSECURE_TLS:-false}
+      PEEKABOO_HIK_SDK_LOG_LEVEL: ${PEEKABOO_HIK_SDK_LOG_LEVEL:-0}
+      PEEKABOO_HIK_SDK_LOG_DIR: ${PEEKABOO_HIK_SDK_LOG_DIR:-}
       PEEKABOO_TRUST_PROXY: ${PEEKABOO_TRUST_PROXY:-false}
     volumes:
       - peekaboo-data:/data

@@ -50,6 +50,8 @@ internal sealed class HikvisionSdkRuntime(
                 throw HikvisionErrorMapper.FromLastError("initialize the SDK path");
             }
 
+            ConfigureBundledOpenSsl(sdkPath);
+
             if (HikvisionNative.NET_DVR_Init() == 0)
             {
                 throw HikvisionErrorMapper.FromLastError("initialize the SDK");
@@ -92,6 +94,34 @@ internal sealed class HikvisionSdkRuntime(
             {
                 Cleanup();
             }
+        }
+    }
+
+    private void ConfigureBundledOpenSsl(string sdkPath)
+    {
+        // Container images keep the SDK's OpenSSL copies out of LD_LIBRARY_PATH so
+        // they cannot shadow the distro TLS stack for the rest of the process.
+        var openssl = Path.Combine(sdkPath, "private");
+        var crypto = Path.Combine(openssl, "libcrypto.so.3");
+        var ssl = Path.Combine(openssl, "libssl.so.3");
+
+        if (!File.Exists(crypto) || !File.Exists(ssl))
+        {
+            return;
+        }
+
+        if (HikvisionNative.NET_DVR_SetSDKInitCfg(
+                HikvisionConstants.NetSdkInitCfgLibcryptoPath,
+                crypto) == 0)
+        {
+            logger.LogWarning("Could not configure the bundled Hikvision libcrypto path.");
+        }
+
+        if (HikvisionNative.NET_DVR_SetSDKInitCfg(
+                HikvisionConstants.NetSdkInitCfgLibsslPath,
+                ssl) == 0)
+        {
+            logger.LogWarning("Could not configure the bundled Hikvision libssl path.");
         }
     }
 
