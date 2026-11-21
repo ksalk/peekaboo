@@ -18,6 +18,17 @@ public sealed class StreamKeyTests
     }
 
     [Fact]
+    public void Playback_keys_are_marked_as_playback()
+    {
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+        var playback = StreamKey.Playback("camera-1", start, start.AddMinutes(5));
+        var live = StreamKey.Live("camera-1", CameraStream.Main);
+
+        Assert.True(playback.IsPlayback);
+        Assert.False(live.IsPlayback);
+    }
+
+    [Fact]
     public void Live_keys_with_the_same_stream_share_the_same_session_identity()
     {
         var first = StreamKey.Live("camera-1", CameraStream.Main);
