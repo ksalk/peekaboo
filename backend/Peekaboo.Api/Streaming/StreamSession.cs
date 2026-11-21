@@ -301,49 +301,54 @@ internal sealed class StreamSession
 
         return _source switch
         {
-            RtspStreamSource =>
-            [
-                "-hide_banner",
-                "-loglevel", "error",
-                "-rtsp_transport", _options.RtspTransport,
-                "-analyzeduration", "1000000",
-                "-probesize", "1000000",
-                "-i", _streamUrl,
-                "-map", "0:v:0",
-                "-an",
-                "-sn",
-                "-dn",
-                .. durationArguments,
-                "-c:v", "copy",
-                "-f", "mp4",
-                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-                "-flush_packets", "1",
-                "pipe:1",
-            ],
-            HikvisionLiveStreamSource =>
-            [
-                "-hide_banner",
-                "-loglevel", "error",
-                "-f", "mpeg",
-                "-analyzeduration", "1000000",
-                "-probesize", "1000000",
-                "-i", "pipe:0",
-                "-map", "0:v:0",
-                "-an",
-                "-sn",
-                "-dn",
-                .. durationArguments,
-                "-c:v", "copy",
-                "-f", "mp4",
-                "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-                "-flush_packets", "1",
-                "pipe:1",
-            ],
+            RtspStreamSource => BuildRtspArguments(durationArguments),
+            HikvisionLiveStreamSource or HikvisionPlaybackStreamSource =>
+                BuildSdkArguments(durationArguments),
             _ => throw new ArgumentException(
                 $"Unsupported stream source type {_source.GetType().Name}.",
                 nameof(_source)),
         };
     }
+
+    private string[] BuildRtspArguments(string[] durationArguments) =>
+    [
+        "-hide_banner",
+        "-loglevel", "error",
+        "-rtsp_transport", _options.RtspTransport,
+        "-analyzeduration", "1000000",
+        "-probesize", "1000000",
+        "-i", _streamUrl,
+        "-map", "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        .. durationArguments,
+        "-c:v", "copy",
+        "-f", "mp4",
+        "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+        "-flush_packets", "1",
+        "pipe:1",
+    ];
+
+    private static string[] BuildSdkArguments(string[] durationArguments) =>
+    [
+        "-hide_banner",
+        "-loglevel", "error",
+        "-f", "mpeg",
+        "-analyzeduration", "1000000",
+        "-probesize", "1000000",
+        "-i", "pipe:0",
+        "-map", "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        .. durationArguments,
+        "-c:v", "copy",
+        "-f", "mp4",
+        "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+        "-flush_packets", "1",
+        "pipe:1",
+    ];
 
     private async Task PumpInputAsync(Process process)
     {
@@ -353,6 +358,12 @@ internal sealed class StreamSession
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
+        }
+        catch (Exception exception) when (
+            _isPlayback && exception is IOException or ObjectDisposedException)
+        {
+            // ffmpeg may stop consuming at the duration cap before the NVR sends
+            // its end marker. The output reader reports the clean exit as ended.
         }
         catch (Exception exception)
         {

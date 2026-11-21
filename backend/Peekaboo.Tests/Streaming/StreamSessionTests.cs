@@ -85,13 +85,59 @@ public sealed class StreamSessionTests : IDisposable
         await session.StopAsync(errorMessage: null);
     }
 
+    [Fact]
+    public async Task Sdk_playback_input_uses_the_pipe_and_duration_cap()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var stdinPath = Path.Combine(_directory, "playback-stdin.bin");
+        var argsPath = Path.Combine(_directory, "playback-args.txt");
+        var script = CreateScript(
+            $"printf '%s\\n' \"$@\" > \"{argsPath}\"\n" +
+            $"cat > \"{stdinPath}\"\n" +
+            "exec sleep 300");
+        var payload = new byte[] { 0, 0, 1, 0xba, 9, 8, 7, 6 };
+        var input = new RecordingInput(payload);
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+        var end = start.AddMinutes(5);
+        var source = new HikvisionPlaybackStreamSource(
+            "nvr",
+            "192.168.10.60",
+            8000,
+            IsapiChannel: 1,
+            start,
+            end);
+        var session = CreateSession(
+            script,
+            onTerminated: null,
+            source,
+            input,
+            StreamKey.Playback("camera", start, end));
+
+        session.Start();
+        await WaitForFileLengthAsync(stdinPath, payload.Length);
+
+        var arguments = await File.ReadAllLinesAsync(argsPath);
+        Assert.Contains("mpeg", arguments);
+        Assert.Contains("pipe:0", arguments);
+        Assert.Contains("-t", arguments);
+        Assert.Contains("300", arguments);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
+
+        await session.StopAsync(errorMessage: null);
+    }
+
     private string StartLogPath => Path.Combine(_directory, "starts.log");
 
     private StreamSession CreateSession(
         string scriptPath,
         Action? onTerminated,
         StreamSource? source = null,
-        IStreamInput? input = null)
+        IStreamInput? input = null,
+        StreamKey? key = null)
     {
         var options = new StreamOptions(
             scriptPath,
@@ -104,7 +150,7 @@ public sealed class StreamSessionTests : IDisposable
         var credentials = CameraCredentials.FromConfiguration(new ConfigurationBuilder().Build());
 
         return new StreamSession(
-            StreamKey.Live("camera", CameraStream.Sub),
+            key ?? StreamKey.Live("camera", CameraStream.Sub),
             source ?? new RtspStreamSource("rtsp://fake.local/stream"),
             input,
             options,

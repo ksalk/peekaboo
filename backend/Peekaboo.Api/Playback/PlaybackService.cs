@@ -1,5 +1,7 @@
 using Peekaboo.Api.Cameras;
+using Peekaboo.Api.Hikvision;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Streaming;
 
 namespace Peekaboo.Api.Playback;
@@ -17,14 +19,43 @@ public sealed class PlaybackService(CameraService cameras, IIsapiClient isapi)
             return null;
         }
 
-        return new RtspStreamSource(
-            IsapiPlaybackUrl.Build(
-                source.RtspBaseUrl,
-                source.MainStreamId,
+        if (source.NvrTransport == NvrTransports.Rtsp)
+        {
+            return new RtspStreamSource(
+                IsapiPlaybackUrl.Build(
+                    source.RtspBaseUrl,
+                    source.MainStreamId,
+                    start,
+                    end),
+                Playback: true,
+                Duration: end - start);
+        }
+
+        if (source.NvrTransport == NvrTransports.HikvisionSdk)
+        {
+            if (!HikvisionChannelMap.TryParseStreamId(
+                    source.MainStreamId,
+                    out var isapiChannel,
+                    out _))
+            {
+                throw new HikvisionException(
+                    $"Stream ID '{source.MainStreamId}' is not a valid SDK playback stream ID. " +
+                    "Use the camera's main stream ID, for example 101.",
+                    HikvisionFailureKind.Channel);
+            }
+
+            return new HikvisionPlaybackStreamSource(
+                source.NvrId,
+                source.NvrHost,
+                source.SdkPort,
+                isapiChannel,
                 start,
-                end),
-            Playback: true,
-            Duration: end - start);
+                end);
+        }
+
+        throw new HikvisionException(
+            $"NVR transport '{source.NvrTransport}' is not supported.",
+            HikvisionFailureKind.Unavailable);
     }
 
     public async Task<RecordingSearchDto?> SearchAsync(

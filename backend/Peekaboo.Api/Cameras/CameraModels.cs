@@ -33,6 +33,9 @@ public sealed record CameraPlaybackSource(
     string CameraId,
     string CameraName,
     string NvrId,
+    string NvrTransport,
+    string NvrHost,
+    int SdkPort,
     string RtspBaseUrl,
     string MainStreamId);
 

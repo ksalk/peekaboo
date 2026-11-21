@@ -54,6 +54,27 @@ public sealed record HikvisionLiveStreamSource(
 }
 
 /// <summary>
+/// A recorded range pulled through the Hikvision SDK private protocol. Playback
+/// uses the main stream of the logical ISAPI channel.
+/// </summary>
+public sealed record HikvisionPlaybackStreamSource(
+    string NvrId,
+    string Host,
+    int SdkPort,
+    int IsapiChannel,
+    DateTimeOffset Start,
+    DateTimeOffset End) : StreamSource
+{
+    public override bool IsPlayback => true;
+
+    public override TimeSpan? MaximumDuration => End - Start;
+
+    public override string SafeDescription =>
+        $"Hikvision SDK {Host}:{SdkPort} playback channel {IsapiChannel} " +
+        $"{Start:O}..{End:O}";
+}
+
+/// <summary>
 /// Canonical stream-kind values used in <see cref="StreamKey"/>. Keys are compared
 /// by exact string equality, so kinds must be created through these constants.
 /// </summary>

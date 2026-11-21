@@ -39,9 +39,13 @@ internal sealed class HikvisionLiveInput(
         var callbackId = Interlocked.Increment(ref _nextCallbackId);
         Callbacks[callbackId] = context;
         var handle = -1;
+        Task? pumpTask = null;
 
         try
         {
+            // Drain while the SDK connects and starts delivering data.
+            pumpTask = PumpAsync(context, destination, cancellationToken);
+
             handle = StartRealPlay(
                 lease.Connection.UserId,
                 sdkChannel,
@@ -54,7 +58,7 @@ internal sealed class HikvisionLiveInput(
             }
 
             logger.LogDebug("Hikvision live stream started for {Source}", source.SafeDescription);
-            await PumpAsync(context, destination, cancellationToken);
+            await pumpTask;
         }
         finally
         {
@@ -63,6 +67,19 @@ internal sealed class HikvisionLiveInput(
             // channel, and keeps cleanup unconditional if the native stop throws.
             Callbacks.TryRemove(callbackId, out _);
             context.Complete();
+
+            if (pumpTask is not null)
+            {
+                try
+                {
+                    await pumpTask.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception)
+                {
+                    // The pump reports its own failure through the outer exception.
+                }
+            }
+
             context.Drain();
 
             if (handle >= 0)
@@ -186,9 +203,9 @@ internal sealed class HikvisionLiveInput(
     {
         private const long MaximumQueuedBytes = 64L * 1024 * 1024;
         private readonly Channel<Packet> _packets = Channel.CreateBounded<Packet>(
-            new BoundedChannelOptions(256)
+            new BoundedChannelOptions(4096)
             {
-                SingleReader = true,
+                SingleReader = false,
                 SingleWriter = false,
                 FullMode = BoundedChannelFullMode.Wait,
                 AllowSynchronousContinuations = false,

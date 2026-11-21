@@ -13,6 +13,10 @@ internal sealed class HikvisionStreamInputFactory(
                 live,
                 pool,
                 loggerFactory.CreateLogger<HikvisionLiveInput>()),
+            HikvisionPlaybackStreamSource playback => new HikvisionPlaybackInput(
+                playback,
+                pool,
+                loggerFactory.CreateLogger<HikvisionPlaybackInput>()),
             _ => null,
         };
 }
