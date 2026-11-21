@@ -5,6 +5,9 @@
 .vscode
 .idea
 
+# Raw Hikvision SDK extraction. Docker builds use vendor/hikvision instead.
+EN-HCNetSDKV*
+
 **/bin
 **/obj
 **/node_modules

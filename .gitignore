@@ -1,6 +1,11 @@
 # Local vendor documentation
 /isapi.pdf
 
+# Proprietary Hikvision SDK. Download it from Hikvision, copy its lib
+# directory to vendor/hikvision, and never commit it to this public repo.
+/EN-HCNetSDKV*
+/vendor/hikvision/
+
 # Secrets and local configuration
 .env
 .env.*

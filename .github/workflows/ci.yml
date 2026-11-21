@@ -13,6 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  vendor:
+    name: Vendor binaries
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reject proprietary Hikvision SDK
+        run: |
+          if git ls-files | grep -E '(^|/)(EN-HCNetSDKV[^/]*|vendor/hikvision)(/|$)|(^|/)(HCNetSDK|plaympeg4|DecodeCardSdk)\.h$|\.so(\.[0-9]+)*$'; then
+            echo "Proprietary Hikvision SDK files must not be committed." >&2
+            exit 1
+          fi
+
   backend:
     name: Backend
     runs-on: ubuntu-24.04
