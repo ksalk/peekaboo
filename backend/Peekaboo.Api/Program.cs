@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Peekaboo.Api.Auth;
+using Peekaboo.Api.Alarms;
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Data;
 using Peekaboo.Api.Endpoints;
@@ -53,6 +54,9 @@ builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
 builder.Services.AddSingleton<IIsapiAlarmLogClient, IsapiAlarmLogClient>();
+// Any future cache consumer must set MemoryCacheEntryOptions.Size.
+builder.Services.AddMemoryCache(options => options.SizeLimit = 100_000);
+builder.Services.AddSingleton<AlarmRangeService>();
 builder.Services.AddSingleton(services => new PlaybackService(
     services.GetRequiredService<CameraService>(),
     services.GetRequiredService<IIsapiClient>(),
@@ -160,6 +164,7 @@ app.MapUserEndpoints();
 app.MapNvrEndpoints();
 app.MapCameraEndpoints();
 app.MapPlaybackEndpoints();
+app.MapAlarmEndpoints();
 app.MapStreamEndpoints();
 
 app.MapFallback((HttpContext context, IWebHostEnvironment environment) =>

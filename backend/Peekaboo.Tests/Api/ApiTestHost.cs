@@ -21,7 +21,8 @@ internal sealed class ApiTestHost : IDisposable
 
     public ApiTestHost(
         IReadOnlyDictionary<string, string?>? settings = null,
-        IIsapiClient? isapiClient = null)
+        IIsapiClient? isapiClient = null,
+        IIsapiAlarmLogClient? alarmLogClient = null)
     {
         DatabasePath = Path.Combine(_directory, "peekaboo.db");
 
@@ -45,6 +46,15 @@ internal sealed class ApiTestHost : IDisposable
                 {
                     services.RemoveAll<IIsapiClient>();
                     services.AddSingleton(isapiClient);
+                });
+            }
+
+            if (alarmLogClient is not null)
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IIsapiAlarmLogClient>();
+                    services.AddSingleton(alarmLogClient);
                 });
             }
         });
