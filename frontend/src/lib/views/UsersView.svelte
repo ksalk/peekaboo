@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../api';
   import { auth } from '../auth.svelte';
+  import { formatDate } from '../date-time';
   import type { User } from '../types';
 
   let users = $state<User[]>([]);
@@ -175,7 +176,7 @@
               {#if user.isAdmin}<span class="badge accent">admin</span>{/if}
             </h2>
             <span class="muted small-text">
-              Joined {new Date(user.createdAt).toLocaleDateString()}
+              Joined {formatDate(user.createdAt)}
             </span>
 
             {#if resetFor === user.id}
