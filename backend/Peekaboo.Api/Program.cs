@@ -52,6 +52,7 @@ builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configurati
 builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
+builder.Services.AddSingleton<IIsapiAlarmLogClient, IsapiAlarmLogClient>();
 builder.Services.AddSingleton(services => new PlaybackService(
     services.GetRequiredService<CameraService>(),
     services.GetRequiredService<IIsapiClient>(),
