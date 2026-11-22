@@ -5,7 +5,12 @@
   import PlaybackTimeline from '../components/PlaybackTimeline.svelte';
   import { formatDuration, segmentsOverlap } from '../playback-utils';
   import { StreamPlayer } from '../stream-player';
-  import type { Camera, RecordingSearchResult, RecordingSegment } from '../types';
+  import type {
+    AlarmRange,
+    Camera,
+    RecordingSearchResult,
+    RecordingSegment,
+  } from '../types';
 
   type PlayerStatus = 'idle' | 'connecting' | 'playing' | 'ended' | 'error';
 
@@ -21,6 +26,11 @@
   let searching = $state(false);
   let searchError = $state<string | null>(null);
   let result = $state<RecordingSearchResult | null>(null);
+  let motionRanges = $state<AlarmRange[]>([]);
+  let motionError = $state<string | null>(null);
+  let motionTruncated = $state(false);
+  let motionWindow = $state<{ start: string; end: string } | null>(null);
+  let motionLoading = $state(false);
   let selectedSegment = $state<RecordingSegment | null>(null);
   let playerStatus = $state<PlayerStatus>('idle');
   let playerError = $state('');
@@ -41,6 +51,9 @@
       (sum, segment) => sum + segment.durationSeconds,
       0,
     ),
+  );
+  const totalMotionDuration = $derived(
+    motionRanges.reduce((sum, range) => sum + range.durationSeconds, 0),
   );
   const jumpTarget = $derived(
     selectedSegment
@@ -128,6 +141,11 @@
     searching = false;
     stopPlayback();
     result = null;
+    motionRanges = [];
+    motionError = null;
+    motionTruncated = false;
+    motionWindow = null;
+    motionLoading = false;
     searchError = null;
     copyState = null;
   }
@@ -169,6 +187,11 @@
 
     stopPlayback();
     result = null;
+    motionRanges = [];
+    motionError = null;
+    motionTruncated = false;
+    motionWindow = null;
+    motionLoading = true;
     searchError = null;
     copyState = null;
     searching = true;
@@ -178,24 +201,61 @@
     searchController = controller;
 
     try {
-      const response = await api.listRecordings(
-        cameraId,
-        start.toISOString(),
-        end.toISOString(),
-        controller.signal,
-      );
+      const recordingsRequest = api
+        .listRecordings(
+          cameraId,
+          start.toISOString(),
+          end.toISOString(),
+          controller.signal,
+        )
+        .then(
+          (value) => {
+            if (!controller.signal.aborted) {
+              result = value;
+            }
+          },
+          (cause) => {
+            if (!controller.signal.aborted) {
+              searchError = errorMessage(cause);
+            }
+          },
+        );
 
-      if (!controller.signal.aborted) {
-        result = response;
-      }
-    } catch (cause) {
-      if (!controller.signal.aborted) {
-        searchError = errorMessage(cause);
-      }
+      const alarmsRequest = api
+        .listAlarms(
+          {
+            cameraId,
+            start: start.toISOString(),
+            end: end.toISOString(),
+          },
+          controller.signal,
+        )
+        .then(
+          (value) => {
+            if (!controller.signal.aborted) {
+              motionRanges = value.ranges;
+              motionTruncated = value.truncated;
+              motionWindow = { start: value.start, end: value.end };
+              motionLoading = false;
+            }
+          },
+          (cause) => {
+            if (!controller.signal.aborted) {
+              motionRanges = [];
+              motionTruncated = false;
+              motionWindow = null;
+              motionError = errorMessage(cause);
+              motionLoading = false;
+            }
+          },
+        );
+
+      await Promise.all([recordingsRequest, alarmsRequest]);
     } finally {
       if (searchController === controller) {
         searchController = null;
         searching = false;
+        motionLoading = false;
       }
     }
   }
@@ -557,6 +617,12 @@
       <div class="alert" role="alert">{searchError}</div>
     {/if}
 
+    {#if motionError}
+      <div class="alert" role="status">
+        Motion ranges could not be loaded: {motionError}
+      </div>
+    {/if}
+
     {#if selectedSegment}
       <article class="card playback-player" bind:this={playerCard} tabindex="-1">
         <header class="playback-player-header">
@@ -641,35 +707,58 @@
       </article>
     {/if}
 
-    {#if result}
+    {#if result || motionWindow}
       <div class="playback-summary">
         <p>
-          <strong>{result.recordings.length}</strong>
-          recording{result.recordings.length === 1 ? '' : 's'} ·
-          {formatDuration(totalDuration)} total
+          {#if result}
+            <strong>{result.recordings.length}</strong>
+            recording{result.recordings.length === 1 ? '' : 's'} ·
+            {formatDuration(totalDuration)} total
+          {/if}
+          {#if result && motionRanges.length > 0}·{/if}
+          {#if motionRanges.length > 0}
+            <strong>{motionRanges.length}</strong>
+            motion range{motionRanges.length === 1 ? '' : 's'} ·
+            {formatDuration(totalMotionDuration)}
+          {/if}
         </p>
-        {#if result.truncated}
+        {#if result?.truncated}
           <p class="hint">
             Showing a limited number of segments. Narrow the time range to see everything.
           </p>
         {/if}
+        {#if motionTruncated}
+          <p class="hint">
+            Showing a limited number of motion ranges. Narrow the time range to see everything.
+          </p>
+        {/if}
       </div>
 
-      {#if result.recordings.length === 0}
+      <PlaybackTimeline
+        start={result?.start ?? motionWindow!.start}
+        end={result?.end ?? motionWindow!.end}
+        recordings={result?.recordings ?? []}
+        motionRanges={motionRanges}
+        motionTruncated={motionTruncated}
+        motionUnavailable={motionError !== null}
+        motionPending={motionLoading}
+        selectedSegment={selectedSegment}
+        truncated={result?.truncated ?? false}
+        onPlay={(segment) => void play(segment)}
+      />
+
+      {#if result && result.recordings.length === 0}
         <div class="empty-state">
           <h2>No recordings found</h2>
-          <p>Try another date or a wider time range.</p>
+          <p>
+            {motionRanges.length > 0
+              ? 'Motion alarms are shown on the timeline above, but there are no recording segments to play.'
+              : 'Try another date or a wider time range.'}
+          </p>
         </div>
-      {:else}
-        <PlaybackTimeline
-          start={result.start}
-          end={result.end}
-          recordings={result.recordings}
-          selectedSegment={selectedSegment}
-          truncated={result.truncated}
-          onPlay={(segment) => void play(segment)}
-        />
+      {/if}
 
+      {#if result && result.recordings.length > 0}
         {#each groups as group (group.key)}
           <section class="recording-group">
             <h2>{group.label}</h2>

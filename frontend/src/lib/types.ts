@@ -44,3 +44,27 @@ export interface RecordingSearchResult {
   truncated: boolean;
   recordings: RecordingSegment[];
 }
+
+export type AlarmTarget = 'human' | 'vehicle' | 'unknown';
+
+export interface AlarmRange {
+  cameraId: string;
+  cameraName: string;
+  nvrId: string;
+  nvrName: string;
+  channelId: number;
+  start: string;
+  end: string;
+  durationSeconds: number;
+  target: AlarmTarget;
+  targetLabel: string | null;
+  inferredStart: boolean;
+  inferredEnd: boolean;
+}
+
+export interface AlarmSearchResult {
+  start: string;
+  end: string;
+  truncated: boolean;
+  ranges: AlarmRange[];
+}

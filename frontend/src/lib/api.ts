@@ -1,4 +1,10 @@
-import type { Camera, Nvr, RecordingSearchResult, User } from './types';
+import type {
+  AlarmSearchResult,
+  Camera,
+  Nvr,
+  RecordingSearchResult,
+  User,
+} from './types';
 
 interface ProblemDetails {
   title?: string;
@@ -136,6 +142,33 @@ export const api = {
         `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
       { signal },
     ),
+
+  listAlarms: (
+    params: {
+      cameraId?: string;
+      nvrId?: string;
+      start: string;
+      end: string;
+      target?: string;
+    },
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams({
+      start: params.start,
+      end: params.end,
+    });
+    if (params.cameraId) {
+      query.set('cameraId', params.cameraId);
+    }
+    if (params.nvrId) {
+      query.set('nvrId', params.nvrId);
+    }
+    if (params.target) {
+      query.set('target', params.target);
+    }
+
+    return request<AlarmSearchResult>(`/api/alarms?${query.toString()}`, { signal });
+  },
 
   listUsers: () => request<User[]>('/api/users'),
   createUser: (username: string, password: string, isAdmin: boolean) =>
