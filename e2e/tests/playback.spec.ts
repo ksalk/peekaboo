@@ -3,6 +3,7 @@ import { createCameraFixture } from './support/api';
 import { feeds, uniqueName } from './support/env';
 import {
   expectConsumerCount,
+  localDateTime,
   openPlayback,
 } from './support/ui';
 
@@ -19,15 +20,19 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   await openPlayback(page);
   await page.getByLabel('Camera').selectOption(camera.id);
 
-  await page.getByLabel('From', { exact: true }).fill('12:00:00');
-  await page.getByLabel('To', { exact: true }).fill('11:00:00');
+  const today = new Date();
+  const todayText = localDateTime(today);
+  const dayPrefix = todayText.slice(0, 10);
+
+  await page.getByLabel('From', { exact: true }).fill(`${dayPrefix} 12:00:00`);
+  await page.getByLabel('To', { exact: true }).fill(`${dayPrefix} 11:00:00`);
   await page.getByRole('button', { name: 'Search recordings' }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: 'End time must be after start time' }),
   ).toBeVisible();
 
-  await page.getByLabel('From', { exact: true }).fill('00:00:00');
-  await page.getByLabel('To', { exact: true }).fill('23:59:59');
+  await page.getByLabel('From', { exact: true }).fill(`${dayPrefix} 00:00:00`);
+  await page.getByLabel('To', { exact: true }).fill(`${dayPrefix} 23:59:59`);
   await page.getByRole('button', { name: 'Search recordings' }).click();
 
   const rows = page.locator('.recording-row');

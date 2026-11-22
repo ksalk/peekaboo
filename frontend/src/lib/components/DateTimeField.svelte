@@ -381,8 +381,6 @@
   class="date-time-field"
   class:has-error={error !== null}
   bind:this={root}
-  role="group"
-  aria-label={label}
 >
   <label for={inputId}>{label}</label>
 

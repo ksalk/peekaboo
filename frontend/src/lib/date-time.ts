@@ -151,6 +151,18 @@ export function endOfDay(value: DateInput): Date | null {
   return result;
 }
 
+/**
+ * Turns a UI end value into an exclusive API bound. The last second of a day
+ * (`23:59:59`) becomes the next day's midnight.
+ */
+export function toExclusiveEnd(value: Date): Date {
+  if (value.getHours() === 23 && value.getMinutes() === 59 && value.getSeconds() === 59) {
+    return new Date(value.getTime() + 1000);
+  }
+
+  return value;
+}
+
 export function addDays(value: DateInput, days: number): Date | null {
   const date = toDate(value);
   if (!date) {
@@ -221,7 +233,11 @@ export function toDisplayDateTime(value: DateInput): string {
  * Parses the internal `YYYY-MM-DDTHH:mm[:ss]` form as local time. Returns null
  * for impossible values, including local times skipped by a DST transition.
  */
-export function parseLocalDateTimeInput(value: string): Date | null {
+export function parseLocalDateTimeInput(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+
   const match =
     /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
   if (!match) {
@@ -243,6 +259,10 @@ export function parseLocalDateTimeInput(value: string): Date | null {
  * accepted and treated as local midnight.
  */
 export function parseDisplayDateTime(value: string): Date | null {
+  if (!value) {
+    return null;
+  }
+
   const match =
     /^(\d{1,2})-(\d{1,2})-(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(
       value.trim(),

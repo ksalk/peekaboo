@@ -1,8 +1,20 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { SvelteDate, SvelteMap } from 'svelte/reactivity';
+  import { SvelteMap } from 'svelte/reactivity';
   import { api, errorMessage } from '../api';
+  import DateTimeField from '../components/DateTimeField.svelte';
   import PlaybackTimeline from '../components/PlaybackTimeline.svelte';
+  import {
+    dayKey,
+    formatDate,
+    formatDayLabel,
+    formatTime,
+    parseLocalDateTimeInput,
+    quickRange,
+    toExclusiveEnd,
+    toLocalDateTimeInput,
+    type QuickRangeName,
+  } from '../date-time';
   import { formatDuration, segmentsOverlap } from '../playback-utils';
   import { StreamPlayer } from '../stream-player';
   import type {
@@ -15,14 +27,14 @@
   type PlayerStatus = 'idle' | 'connecting' | 'playing' | 'ended' | 'error';
 
   const CAMERA_KEY = 'peekaboo.playback.camera';
+  const initialRange = quickRange('today');
 
   let cameras = $state<Camera[]>([]);
   let camerasLoading = $state(true);
   let loadError = $state<string | null>(null);
   let cameraId = $state('');
-  let date = $state(formatDateInput(new Date()));
-  let startTime = $state('00:00:00');
-  let endTime = $state('23:59:59');
+  let from = $state(toLocalDateTimeInput(initialRange.from));
+  let to = $state(toLocalDateTimeInput(initialRange.to));
   let searching = $state(false);
   let searchError = $state<string | null>(null);
   let result = $state<RecordingSearchResult | null>(null);
@@ -150,12 +162,10 @@
     copyState = null;
   }
 
-  function setQuickDay(offsetDays: number) {
-    const day = new SvelteDate();
-    day.setDate(day.getDate() + offsetDays);
-    date = formatDateInput(day);
-    startTime = '00:00:00';
-    endTime = '23:59:59';
+  function setQuickRange(name: QuickRangeName) {
+    const range = quickRange(name);
+    from = toLocalDateTimeInput(range.from);
+    to = toLocalDateTimeInput(range.to);
     resetResults();
   }
 
@@ -164,8 +174,8 @@
       return;
     }
 
-    const start = parseLocalDateTime(date, startTime);
-    let end = parseLocalDateTime(date, endTime);
+    const start = parseLocalDateTimeInput(from);
+    let end = parseLocalDateTimeInput(to);
 
     if (start === null || end === null) {
       searchError =
@@ -173,15 +183,15 @@
       return;
     }
 
-    if (endTime === '23:59:59') {
-      const exclusiveEnd = new SvelteDate(end.getTime());
-      exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
-      exclusiveEnd.setHours(0, 0, 0, 0);
-      end = exclusiveEnd;
-    }
+    end = toExclusiveEnd(end);
 
     if (end.getTime() <= start.getTime()) {
       searchError = 'End time must be after start time.';
+      return;
+    }
+
+    if (end.getTime() - start.getTime() > 31 * 24 * 60 * 60 * 1000) {
+      searchError = 'A recording search can span at most 31 days.';
       return;
     }
 
@@ -434,104 +444,13 @@
     void play(adjusted);
   }
 
-  function formatDateInput(value: Date): string {
-    const pad = (part: number) => part.toString().padStart(2, '0');
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
-  }
-
-  function parseLocalDateTime(dateValue: string, timeValue: string): Date | null {
-    const dateParts = dateValue.split('-').map(Number);
-    const timeParts = timeValue.split(':').map(Number);
-
-    if (dateParts.length !== 3 || timeParts.length < 2) {
-      return null;
-    }
-
-    const [year, month, day] = dateParts;
-    const [hours, minutes, seconds = 0] = timeParts;
-
-    if (
-      year === undefined ||
-      month === undefined ||
-      day === undefined ||
-      hours === undefined ||
-      minutes === undefined ||
-      !Number.isInteger(year) ||
-      !Number.isInteger(month) ||
-      !Number.isInteger(day) ||
-      !Number.isInteger(hours) ||
-      !Number.isInteger(minutes) ||
-      !Number.isInteger(seconds)
-    ) {
-      return null;
-    }
-
-    const value = new Date(year, month - 1, day, hours, minutes, seconds, 0);
-
-    if (
-      Number.isNaN(value.getTime()) ||
-      value.getFullYear() !== year ||
-      value.getMonth() !== month - 1 ||
-      value.getDate() !== day ||
-      value.getHours() !== hours ||
-      value.getMinutes() !== minutes ||
-      value.getSeconds() !== seconds
-    ) {
-      return null;
-    }
-
-    return value;
-  }
-
-  function formatTime(iso: string): string {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(new Date(iso));
-  }
-
-  function formatDateLong(iso: string): string {
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(new Date(iso));
-  }
-
-  function dayKey(value: Date): string {
-    return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
-  }
-
-  function groupLabel(key: string, iso: string): string {
-    const today = new SvelteDate();
-    const yesterday = new SvelteDate();
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (key === dayKey(today)) {
-      return 'Today';
-    }
-
-    if (key === dayKey(yesterday)) {
-      return 'Yesterday';
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(new Date(iso));
-  }
-
   function groupRecordings(
     recordings: RecordingSegment[],
   ): { key: string; label: string; items: RecordingSegment[] }[] {
     const grouped = new SvelteMap<string, RecordingSegment[]>();
 
     for (const segment of recordings) {
-      const key = dayKey(new Date(segment.start));
+      const key = dayKey(segment.start);
       const items = grouped.get(key);
       if (items) {
         items.push(segment);
@@ -542,7 +461,7 @@
 
     return [...grouped.entries()].map(([key, items]) => ({
       key,
-      label: groupLabel(key, items[0]!.start),
+      label: formatDayLabel(items[0]!.start),
       items,
     }));
   }
@@ -585,27 +504,29 @@
         </select>
       </label>
 
-      <label>
-        Date
-        <input type="date" bind:value={date} onchange={resetResults} required />
-      </label>
+      <DateTimeField
+        label="From"
+        bind:value={from}
+        onchange={resetResults}
+        required
+      />
 
-      <label>
-        From
-        <input type="time" step="1" bind:value={startTime} onchange={resetResults} required />
-      </label>
-
-      <label>
-        To
-        <input type="time" step="1" bind:value={endTime} onchange={resetResults} required />
-      </label>
+      <DateTimeField
+        label="To"
+        bind:value={to}
+        onchange={resetResults}
+        required
+      />
 
       <div class="playback-filter-actions">
-        <button class="button small ghost" type="button" onclick={() => setQuickDay(0)}>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('today')}>
           Today
         </button>
-        <button class="button small ghost" type="button" onclick={() => setQuickDay(-1)}>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('yesterday')}>
           Yesterday
+        </button>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('last7days')}>
+          Last 7 days
         </button>
         <button class="button primary" type="submit" disabled={!canSearch}>
           {searching ? 'Searching…' : 'Search recordings'}
@@ -629,7 +550,7 @@
           <div>
             <h2>{result?.cameraName ?? cameras.find((camera) => camera.id === cameraId)?.name}</h2>
             <p class="muted">
-              {formatDateLong(selectedSegment.start)} ·
+              {formatDate(selectedSegment.start)} ·
               {formatTime(selectedSegment.start)} – {formatTime(selectedSegment.end)}
             </p>
           </div>

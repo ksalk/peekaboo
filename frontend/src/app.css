@@ -1207,7 +1207,7 @@ button.feed-center:hover .feed-hint {
 
 .playback-filters {
   display: grid;
-  grid-template-columns: minmax(220px, 1.8fr) repeat(3, minmax(140px, 1fr));
+  grid-template-columns: minmax(220px, 1.6fr) repeat(2, minmax(230px, 1fr));
   gap: 0.85rem;
   align-items: end;
 }
@@ -1572,7 +1572,7 @@ button.feed-center:hover .feed-hint {
 
 .alarm-filters {
   display: grid;
-  grid-template-columns: minmax(200px, 1.4fr) minmax(140px, 0.8fr) repeat(2, minmax(190px, 1fr));
+  grid-template-columns: minmax(200px, 1.2fr) minmax(140px, 0.8fr) repeat(2, minmax(230px, 1fr));
   gap: 0.85rem;
   align-items: end;
 }

@@ -1,29 +1,12 @@
 <script lang="ts">
   import { SvelteDate, SvelteSet } from 'svelte/reactivity';
+  import {
+    formatDateRange,
+    formatTime,
+    formatTimelineTick,
+  } from '../date-time';
   import { formatDuration, parseTime, segmentsOverlap } from '../playback-utils';
   import type { AlarmRange, RecordingSegment } from '../types';
-
-  const shortClockFormat = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  const longClockFormat = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const dateFormat = new Intl.DateTimeFormat(undefined, {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-  const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 
   type TimelineRange = {
     startMs: number;
@@ -411,22 +394,15 @@
   }
 
   function formatRangeLabel(currentRange: TimelineRange): string {
-    const startDate = new Date(currentRange.startMs);
-    const endDate = new Date(currentRange.endMs);
-
-    if (startDate.toDateString() === endDate.toDateString()) {
-      return `${dateFormat.format(startDate)} · ${shortClockFormat.format(startDate)}–${shortClockFormat.format(endDate)}`;
-    }
-
-    return `${dateFormat.format(startDate)} ${shortClockFormat.format(startDate)} – ${dateFormat.format(endDate)} ${shortClockFormat.format(endDate)}`;
+    return formatDateRange(currentRange.startMs, currentRange.endMs, false);
   }
 
   function formatTick(ms: number, includeDate: boolean): string {
-    return (includeDate ? dateTimeFormat : shortClockFormat).format(new Date(ms));
+    return formatTimelineTick(ms, includeDate);
   }
 
   function formatClock(ms: number): string {
-    return longClockFormat.format(new Date(ms));
+    return formatTime(ms, true);
   }
 
   function segmentTitle(item: TimelineItem): string {

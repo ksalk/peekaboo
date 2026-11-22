@@ -61,22 +61,44 @@ test('validates filters and clears stale alarm results', async ({ page, request 
   await expect(page.getByText('No motion alarms found')).toBeVisible();
 
   await page.getByLabel('Target').selectOption('');
+  await page.getByRole('button', { name: 'Last 7 days' }).click();
+  const lastSevenFrom = await page
+    .getByLabel('From', { exact: true })
+    .inputValue();
+  const [lastSevenDate, lastSevenTime] = lastSevenFrom.split(' ');
+  const [lastSevenDay, lastSevenMonth, lastSevenYear] = lastSevenDate!
+    .split('-')
+    .map(Number);
+  const [lastSevenHour, lastSevenMinute, lastSevenSecond] = lastSevenTime!
+    .split(':')
+    .map(Number);
+  const lastSevenStart = new Date(
+    lastSevenYear!,
+    lastSevenMonth! - 1,
+    lastSevenDay!,
+    lastSevenHour!,
+    lastSevenMinute!,
+    lastSevenSecond!,
+  );
+  const lastSevenAge = Date.now() - lastSevenStart.getTime();
+  expect(lastSevenAge).toBeGreaterThan(6 * 24 * 60 * 60 * 1000);
+  expect(lastSevenAge).toBeLessThan(8 * 24 * 60 * 60 * 1000);
   await page.getByRole('button', { name: 'Today' }).click();
   await expect(page.getByLabel('From', { exact: true })).toHaveValue(
-    /T00:00(:00)?$/,
+    /^\d{2}-\d{2}-\d{4} 00:00:00$/,
   );
   await page.getByRole('button', { name: 'Search alarms' }).click();
   await expect(page.locator('.alarm-row')).toHaveCount(2);
 
-  await page.getByLabel('From', { exact: true }).fill('2026-11-21T12:00:00');
-  await page.getByLabel('To', { exact: true }).fill('2026-11-21T11:00:00');
+  await page.getByLabel('From', { exact: true }).fill('21-11-2026 12:00:00');
+  await page.getByLabel('To', { exact: true }).fill('21-11-2026 11:00:00');
   await page.getByRole('button', { name: 'Search alarms' }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: 'end must be after its start' }),
   ).toBeVisible();
 
-  await page.getByLabel('From', { exact: true }).fill('2026-10-01T00:00:00');
-  await page.getByLabel('To', { exact: true }).fill('2026-11-22T00:00:00');
+  await page.getByLabel('From', { exact: true }).fill('01-10-2026 00:00:00');
+  await page.getByLabel('To', { exact: true }).fill('22-11-2026 00:00:00');
   await page.getByRole('button', { name: 'Search alarms' }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: 'at most 31 days' }),

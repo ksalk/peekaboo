@@ -2,35 +2,34 @@
   import { onDestroy, onMount } from 'svelte';
   import { SvelteDate, SvelteMap } from 'svelte/reactivity';
   import { api, errorMessage } from '../api';
+  import DateTimeField from '../components/DateTimeField.svelte';
+  import {
+    formatDayLabel,
+    formatTime,
+    parseLocalDateTimeInput,
+    quickRange,
+    toExclusiveEnd,
+    toLocalDateTimeInput,
+    type QuickRangeName,
+  } from '../date-time';
   import { formatDuration } from '../playback-utils';
   import type { AlarmRange, AlarmSearchResult, AlarmTarget, Camera } from '../types';
-
-  const clockFormat = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const dayFormat = new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 
   let cameras = $state<Camera[]>([]);
   let camerasLoading = $state(true);
   let camerasError = $state<string | null>(null);
   let cameraId = $state('');
   let target = $state('');
-  let from = $state(formatInput(new Date(Date.now() - 24 * 60 * 60 * 1000)));
-  let to = $state(formatInput(new Date()));
+  const initialRange = quickRange('today');
+  let from = $state(toLocalDateTimeInput(initialRange.from));
+  let to = $state(toLocalDateTimeInput(initialRange.to));
   let loading = $state(false);
   let error = $state<string | null>(null);
   let result = $state<AlarmSearchResult | null>(null);
   let controller: AbortController | null = null;
   let destroyed = false;
 
-  const canSearch = $derived(!loading && from !== '' && to !== '');
+  const canSearch = $derived(!loading && !camerasLoading);
   const totalDuration = $derived(
     (result?.ranges ?? []).reduce(
       (sum, range) => sum + range.durationSeconds,
@@ -78,14 +77,16 @@
       return;
     }
 
-    const start = parseInput(from);
-    const end = parseInput(to);
+    const start = parseLocalDateTimeInput(from);
+    let end = parseLocalDateTimeInput(to);
 
     if (start === null || end === null) {
       error =
         'Choose a valid alarm range. The selected local time may not exist on that date.';
       return;
     }
+
+    end = toExclusiveEnd(end);
 
     if (end <= start) {
       error = 'The alarm range end must be after its start.';
@@ -126,84 +127,11 @@
     }
   }
 
-  function setToday() {
-    const now = new SvelteDate();
-    const start = new SvelteDate(now);
-    start.setHours(0, 0, 0, 0);
-    from = formatInput(start);
-    to = formatInput(now);
+  function setQuickRange(name: QuickRangeName) {
+    const range = quickRange(name);
+    from = toLocalDateTimeInput(range.from);
+    to = toLocalDateTimeInput(range.to);
     resetResults();
-  }
-
-  function setYesterday() {
-    const start = new SvelteDate();
-    start.setDate(start.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    const end = new SvelteDate(start);
-    end.setDate(end.getDate() + 1);
-    from = formatInput(start);
-    to = formatInput(end);
-    resetResults();
-  }
-
-  function setLastSevenDays() {
-    const now = new SvelteDate();
-    from = formatInput(new SvelteDate(now.getTime() - 7 * 24 * 60 * 60 * 1000));
-    to = formatInput(now);
-    resetResults();
-  }
-
-  function formatInput(value: Date): string {
-    const pad = (part: number) => part.toString().padStart(2, '0');
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}` +
-      `T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
-  }
-
-  function parseInput(value: string): Date | null {
-    if (!value) {
-      return null;
-    }
-
-    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(
-      value,
-    );
-    if (!match) {
-      return null;
-    }
-
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const hours = Number(match[4]);
-    const minutes = Number(match[5]);
-    const seconds = Number(match[6] ?? '0');
-    const parsed = new SvelteDate(
-      year,
-      month - 1,
-      day,
-      hours,
-      minutes,
-      seconds,
-      0,
-    );
-
-    if (
-      Number.isNaN(parsed.getTime()) ||
-      parsed.getFullYear() !== year ||
-      parsed.getMonth() !== month - 1 ||
-      parsed.getDate() !== day ||
-      parsed.getHours() !== hours ||
-      parsed.getMinutes() !== minutes ||
-      parsed.getSeconds() !== seconds
-    ) {
-      return null;
-    }
-
-    return parsed;
-  }
-
-  function formatClock(iso: string): string {
-    return clockFormat.format(new SvelteDate(iso));
   }
 
   function targetLabel(value: AlarmTarget): string {
@@ -242,34 +170,13 @@
 
     return [...grouped.entries()].map(([key, items]) => ({
       key,
-      label: groupLabel(key, items[0]!.start),
+      label: formatDayLabel(items[0]!.start),
       ranges: items.sort(
         (left, right) =>
           new SvelteDate(right.start).getTime() -
           new SvelteDate(left.start).getTime(),
       ),
     }));
-  }
-
-  function groupLabel(key: string, iso: string): string {
-    const today = new SvelteDate();
-    const yesterday = new SvelteDate();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const date = new SvelteDate(iso);
-
-    if (key === dayKey(today)) {
-      return 'Today';
-    }
-
-    if (key === dayKey(yesterday)) {
-      return 'Yesterday';
-    }
-
-    return dayFormat.format(date);
-  }
-
-  function dayKey(value: Date): string {
-    return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`;
   }
 </script>
 
@@ -328,36 +235,28 @@
         </select>
       </label>
 
-      <label>
-        From
-        <input
-          type="datetime-local"
-          step="1"
-          bind:value={from}
-          onchange={resetResults}
-          required
-        />
-      </label>
+      <DateTimeField
+        label="From"
+        bind:value={from}
+        onchange={resetResults}
+        required
+      />
 
-      <label>
-        To
-        <input
-          type="datetime-local"
-          step="1"
-          bind:value={to}
-          onchange={resetResults}
-          required
-        />
-      </label>
+      <DateTimeField
+        label="To"
+        bind:value={to}
+        onchange={resetResults}
+        required
+      />
 
       <div class="alarm-filter-actions">
-        <button class="button small ghost" type="button" onclick={setToday}>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('today')}>
           Today
         </button>
-        <button class="button small ghost" type="button" onclick={setYesterday}>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('yesterday')}>
           Yesterday
         </button>
-        <button class="button small ghost" type="button" onclick={setLastSevenDays}>
+        <button class="button small ghost" type="button" onclick={() => setQuickRange('last7days')}>
           Last 7 days
         </button>
         <button class="button primary" type="submit" disabled={!canSearch}>
@@ -407,7 +306,7 @@
               {#each group.ranges as range (`${range.cameraId}|${range.channelId}|${range.target}|${range.start}|${range.end}`)}
                 <article class="alarm-row">
                   <div class="alarm-time">
-                    <strong>{formatClock(range.start)} – {formatClock(range.end)}</strong>
+                    <strong>{formatTime(range.start)} – {formatTime(range.end)}</strong>
                     <span class="muted">{formatDuration(range.durationSeconds)}</span>
                   </div>
 

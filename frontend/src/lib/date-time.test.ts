@@ -17,6 +17,7 @@ import {
   quickRange,
   startOfDay,
   toDisplayDateTime,
+  toExclusiveEnd,
   toLocalDateTimeInput,
 } from './date-time';
 
@@ -187,6 +188,15 @@ describe('day and quick-range helpers', () => {
     expect(range.from.getTime()).toBe(
       now.getTime() - 7 * 24 * 60 * 60 * 1000,
     );
+  });
+
+  it('turns the last second of a day into the next exclusive midnight', () => {
+    expect(
+      toDisplayDateTime(toExclusiveEnd(new Date(2026, 10, 22, 23, 59, 59))),
+    ).toBe('23-11-2026 00:00:00');
+    expect(
+      toDisplayDateTime(toExclusiveEnd(new Date(2026, 10, 22, 12, 0, 0))),
+    ).toBe('22-11-2026 12:00:00');
   });
 
   it('adds calendar days across month boundaries', () => {

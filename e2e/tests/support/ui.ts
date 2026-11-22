@@ -15,6 +15,14 @@ export async function openPlayback(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Playback', exact: true })).toBeVisible();
 }
 
+export function localDateTime(value: Date): string {
+  const pad = (part: number) => part.toString().padStart(2, '0');
+  return (
+    `${pad(value.getDate())}-${pad(value.getMonth() + 1)}-${value.getFullYear()} ` +
+    `${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`
+  );
+}
+
 export async function openAlarms(page: Page): Promise<void> {
   await page.goto('/#/alarms');
   await expect(page.getByRole('heading', { name: 'Alarms', exact: true })).toBeVisible();
