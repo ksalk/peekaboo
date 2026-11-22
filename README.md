@@ -298,7 +298,9 @@ written to SQLite.
    credential-free RTSP URL for another player. The player has native browser controls;
    drag **Jump to** and press **Play from here** to restart the NVR stream at another
    time. **Close** releases the playback stream.
-6. Playback also stops on tab hide, navigation, camera/range changes, and new searches.
+6. Playback stops on tab hide and resumes from roughly the last position when the tab
+   becomes visible again. Navigation, camera/range changes, and new searches stop it
+   without resuming.
 
 Assignments are stored per layout in this browser's `localStorage`; they survive
 reloads but never start streams automatically. The selected Playback camera is

@@ -235,6 +235,76 @@ test('zooms and drags the recording timeline without starting playback', async (
   await expect(page.locator('.playback-video')).toHaveCount(0);
 });
 
+test('stops playback when the tab is hidden and resumes on return', async ({
+  page,
+  request,
+}) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Playback visibility'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openPlayback(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+  await page.locator('.playback-timeline-segment').first().click();
+
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(1);
+
+  const beforeHeader = await page.locator('.playback-player-header p').innerText();
+  await expectConsumerCount(feeds.playback.path, 1);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      get: () => true,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+
+  await expect(page.locator('.playback-video')).toHaveCount(0);
+  await expectConsumerCount(feeds.playback.path, 0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      get: () => false,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+
+  await expect(page.locator('.playback-video')).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0.5);
+  await expectConsumerCount(feeds.playback.path, 1);
+  await expect(page.locator('.playback-player-header p')).not.toHaveText(beforeHeader);
+});
+
 test('stops playback on navigation and remembers the selected camera', async ({
   page,
   request,

@@ -70,6 +70,11 @@
   let playRequest = 0;
   let autoPlayAttempted = false;
   let pendingAutoPlayAt: Date | null = null;
+  let hiddenResume = $state<{
+    cameraId: string;
+    segment: RecordingSegment;
+    positionSeconds: number;
+  } | null>(null);
 
   const canSearch = $derived(!searching && cameraId !== '' && !camerasLoading);
   const totalDuration = $derived(
@@ -105,6 +110,7 @@
 
   onDestroy(() => {
     searchController?.abort();
+    hiddenResume = null;
     stopPlayback();
   });
 
@@ -259,14 +265,60 @@
 
   function handleVisibility() {
     if (document.hidden) {
+      rememberPlaybackForResume();
       stopPlayback();
+      return;
     }
+
+    resumeHiddenPlayback();
+  }
+
+  function rememberPlaybackForResume() {
+    if (
+      !cameraId ||
+      !selectedSegment ||
+      (playerStatus !== 'connecting' && playerStatus !== 'playing')
+    ) {
+      return;
+    }
+
+    const position = videoElement?.currentTime ?? 0;
+    hiddenResume = {
+      cameraId,
+      segment: selectedSegment,
+      positionSeconds: Number.isFinite(position) ? Math.max(0, position) : 0,
+    };
+  }
+
+  function resumeHiddenPlayback() {
+    const pending = hiddenResume;
+    hiddenResume = null;
+
+    if (!pending || pending.cameraId !== cameraId) {
+      return;
+    }
+
+    const startMs =
+      new Date(pending.segment.start).getTime() + pending.positionSeconds * 1000;
+    const endMs = new Date(pending.segment.end).getTime();
+
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) {
+      return;
+    }
+
+    const adjusted: RecordingSegment = {
+      ...pending.segment,
+      start: new Date(startMs).toISOString(),
+      durationSeconds: Math.max(0, Math.round((endMs - startMs) / 1000)),
+    };
+    void play(adjusted);
   }
 
   function resetResults() {
     searchController?.abort();
     searchController = null;
     searching = false;
+    hiddenResume = null;
     stopPlayback();
     result = null;
     motionRanges = [];
@@ -313,6 +365,7 @@
     }
 
     loadNotice = null;
+    hiddenResume = null;
     stopPlayback();
     result = null;
     motionRanges = [];
@@ -419,6 +472,7 @@
       return;
     }
 
+    hiddenResume = null;
     const effective = effectiveSegment(segment);
     stopPlayback();
     copyState = null;
@@ -474,6 +528,7 @@
   }
 
   function closePlayer() {
+    hiddenResume = null;
     stopPlayback();
     cameraSelect?.focus();
   }
