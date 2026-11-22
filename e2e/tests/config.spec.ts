@@ -19,6 +19,7 @@ test('manages NVRs and their cameras', async ({ page }) => {
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
   await page.getByLabel('Name', { exact: true }).fill(nvrName);
   await page.getByLabel('NVR address', { exact: true }).fill(submittedBaseUrl);
+  await page.getByLabel('Time zone', { exact: true }).fill('Europe/Warsaw');
   await page.getByRole('button', { name: 'Add NVR', exact: true }).click();
 
   const nvrCard = page.locator('.nvr-card').filter({ hasText: nvrName });
@@ -26,6 +27,11 @@ test('manages NVRs and their cameras', async ({ page }) => {
   await expect(nvrCard.locator('.url')).toHaveText(nvrBaseUrl);
   await expect(nvrCard.locator('.url')).not.toContainText('camuser');
   await expect(nvrCard.locator('.url')).not.toContainText('campassword');
+  await expect(nvrCard).toContainText('Europe/Warsaw');
+
+  await nvrCard.getByRole('button', { name: 'Check clock' }).click();
+  await expect(nvrCard).toContainText('NVR clock:');
+  await expect(nvrCard).toContainText('(override)');
 
   await page.getByRole('button', { name: `Add camera to ${nvrName}` }).click();
   await page.getByLabel('Name', { exact: true }).fill(cameraName);

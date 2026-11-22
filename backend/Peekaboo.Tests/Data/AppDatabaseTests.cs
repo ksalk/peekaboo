@@ -20,7 +20,7 @@ public sealed class AppDatabaseTests : IDisposable
 
         using var connection = database.Open();
 
-        Assert.Equal(3L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(4L, ExecuteScalar(connection, "PRAGMA user_version"));
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
         using (var command = connection.CreateCommand())
@@ -48,6 +48,7 @@ public sealed class AppDatabaseTests : IDisposable
         var nvrColumns = Columns(connection, "nvrs");
         Assert.Contains("transport", nvrColumns);
         Assert.Contains("sdk_port", nvrColumns);
+        Assert.Contains("time_zone", nvrColumns);
     }
 
     [Fact]
@@ -75,7 +76,7 @@ public sealed class AppDatabaseTests : IDisposable
         database.Initialize(NullLogger<AppDatabase>.Instance);
 
         using var connection = database.Open();
-        Assert.Equal(3L, ExecuteScalar(connection, "PRAGMA user_version"));
+        Assert.Equal(4L, ExecuteScalar(connection, "PRAGMA user_version"));
         Assert.Equal(0L, ExecuteScalar(connection, "SELECT COUNT(*) FROM cameras"));
         Assert.Contains("nvr_id", Columns(connection, "cameras"));
         Assert.Contains("transport", Columns(connection, "nvrs"));
@@ -114,6 +115,37 @@ public sealed class AppDatabaseTests : IDisposable
         Assert.True(reader.Read());
         Assert.Equal("rtsp", reader.GetString(0));
         Assert.Equal(8000, reader.GetInt32(1));
+    }
+
+    [Fact]
+    public void Migration_backfills_time_zone_for_existing_nvrs()
+    {
+        var path = Path.Combine(_directory, "time-zone-backfill.db");
+        var migrations = MigrationRunner.LoadMigrations()
+            .Where(migration => migration.Version <= 3)
+            .Select(migration => migration.Sql);
+
+        using (var legacy = new SqliteConnection($"Data Source={path}"))
+        {
+            legacy.Open();
+            using var command = legacy.CreateCommand();
+            command.CommandText = string.Join("\n", migrations) + """
+
+                INSERT INTO nvrs (id, name, base_url, created_at, updated_at)
+                VALUES ('old', 'Legacy NVR', 'rtsp://legacy.local:554',
+                        '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                PRAGMA user_version = 3;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var database = new AppDatabase(path);
+        database.Initialize(NullLogger<AppDatabase>.Instance);
+
+        using var connection = database.Open();
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT time_zone FROM nvrs WHERE id = 'old'";
+        Assert.Equal(string.Empty, read.ExecuteScalar());
     }
 
     [Fact]

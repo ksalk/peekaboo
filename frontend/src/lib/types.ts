@@ -11,8 +11,18 @@ export interface Nvr {
   baseUrl: string;
   transport: 'rtsp' | 'sdk';
   sdkPort: number;
+  timeZone: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NvrClock {
+  nvrId: string;
+  timeZone: string;
+  source: 'override' | 'detected' | 'detected-offset' | 'fallback' | string;
+  localTime: string;
+  offsetMinutes: number;
+  error: string | null;
 }
 
 export type CameraStream = 'main' | 'sub';

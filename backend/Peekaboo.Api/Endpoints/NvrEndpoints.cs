@@ -1,3 +1,4 @@
+using System.Globalization;
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Hikvision;
 using Peekaboo.Api.Isapi;
@@ -22,6 +23,7 @@ public static class NvrEndpoints
         group.MapPost("/", CreateNvr);
         group.MapPut("/{id}", UpdateNvr);
         group.MapDelete("/{id}", DeleteNvr);
+        group.MapGet("/{id}/clock", GetClock);
 
         group.MapPost("/{id}/cameras", CreateCamera);
         group.MapPut("/{id}/cameras/{cameraId}", UpdateCamera);
@@ -42,7 +44,8 @@ public static class NvrEndpoints
             request.Name!.Trim(),
             NvrValidation.NormalizeBaseUrl(request.BaseUrl!),
             request.Transport ?? NvrTransports.Rtsp,
-            request.SdkPort ?? NvrTransports.DefaultSdkPort);
+            request.SdkPort ?? NvrTransports.DefaultSdkPort,
+            NvrValidation.NormalizeTimeZone(request.TimeZone));
 
         return Results.Created($"/api/nvrs/{nvr.Id}", nvr);
     }
@@ -54,7 +57,8 @@ public static class NvrEndpoints
         CameraService cameras,
         StreamManager streams,
         IsapiEndpointResolver isapiEndpoints,
-        HikvisionConnectionPool hikvisionConnections)
+        HikvisionConnectionPool hikvisionConnections,
+        INvrClockResolver clocks)
     {
         var validation = ValidateNvr(request);
         if (validation is not null)
@@ -73,7 +77,8 @@ public static class NvrEndpoints
             request.Name!.Trim(),
             NvrValidation.NormalizeBaseUrl(request.BaseUrl!),
             request.Transport ?? existing.Transport,
-            request.SdkPort ?? existing.SdkPort);
+            request.SdkPort ?? existing.SdkPort,
+            request.TimeZone);
 
         if (updated is null)
         {
@@ -88,6 +93,15 @@ public static class NvrEndpoints
         var sdkPortChanged = existing.SdkPort != updated.SdkPort &&
             (existing.Transport == NvrTransports.HikvisionSdk ||
              updated.Transport == NvrTransports.HikvisionSdk);
+        var timeZoneChanged = !string.Equals(
+            existing.TimeZone,
+            updated.TimeZone,
+            StringComparison.Ordinal);
+
+        if (baseUrlChanged || timeZoneChanged)
+        {
+            clocks.Invalidate(id);
+        }
 
         if (baseUrlChanged || transportChanged || sdkPortChanged)
         {
@@ -115,7 +129,8 @@ public static class NvrEndpoints
         NvrService nvrs,
         StreamManager streams,
         IsapiEndpointResolver isapiEndpoints,
-        HikvisionConnectionPool hikvisionConnections)
+        HikvisionConnectionPool hikvisionConnections,
+        INvrClockResolver clocks)
     {
         var existing = nvrs.Get(id);
         var cameraIds = nvrs.Delete(id);
@@ -124,6 +139,7 @@ public static class NvrEndpoints
             return Results.NotFound();
         }
 
+        clocks.Invalidate(id);
         await streams.StopCamerasAsync(cameraIds, "The NVR was deleted.");
 
         if (existing is not null)
@@ -228,6 +244,36 @@ public static class NvrEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> GetClock(
+        string id,
+        NvrService nvrs,
+        INvrClockResolver clocks,
+        CancellationToken cancellationToken)
+    {
+        var nvr = nvrs.Get(id);
+        if (nvr is null)
+        {
+            return Results.NotFound();
+        }
+
+        var clock = await clocks.ResolveAsync(
+            nvr.Id,
+            nvr.BaseUrl,
+            nvr.TimeZone,
+            cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var offset = clock.TimeZone.GetUtcOffset(now.UtcDateTime);
+        var localTime = new DateTimeOffset(clock.TimeZone.ToDeviceWallTime(now), offset);
+
+        return Results.Ok(new NvrClockDto(
+            nvr.Id,
+            clock.TimeZone.Id,
+            clock.Source,
+            localTime.ToString("O", CultureInfo.InvariantCulture),
+            (int)offset.TotalMinutes,
+            clock.Error));
+    }
+
     private static IResult? ValidateNvr(NvrRequest request)
     {
         var nameError = NvrValidation.NameError(request.Name);
@@ -256,6 +302,13 @@ public static class NvrEndpoints
             return Results.Problem(
                 statusCode: StatusCodes.Status400BadRequest,
                 title: sdkPortError);
+        }
+
+        if (NvrValidation.TimeZoneError(request.TimeZone) is { } timeZoneError)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: timeZoneError);
         }
 
         return null;

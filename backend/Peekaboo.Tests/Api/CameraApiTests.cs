@@ -12,6 +12,7 @@ public sealed class CameraApiTests
         string BaseUrl,
         string Transport,
         int SdkPort,
+        string TimeZone,
         DateTimeOffset CreatedAt,
         DateTimeOffset UpdatedAt);
 
@@ -337,16 +338,49 @@ public sealed class CameraApiTests
         Assert.Equal(HttpStatusCode.NotFound, missingCameraDelete.StatusCode);
     }
 
+    [Fact]
+    public async Task Nvr_time_zone_round_trips_and_is_preserved_on_partial_update()
+    {
+        using var host = new ApiTestHost();
+        using var client = await host.CreateAdminClientAsync();
+
+        var nvr = await CreateNvrAsync(
+            client,
+            "Clock NVR",
+            "rtsp://192.168.10.60:554",
+            timeZone: "Europe/Warsaw");
+        Assert.Equal("Europe/Warsaw", nvr.TimeZone);
+
+        using var partialUpdate = await client.PutAsJsonAsync(
+            $"/api/nvrs/{nvr.Id}",
+            new { name = "Renamed NVR", baseUrl = "rtsp://192.168.10.60:554" });
+        Assert.Equal(HttpStatusCode.OK, partialUpdate.StatusCode);
+        var preserved = await partialUpdate.Content.ReadFromJsonAsync<NvrResponse>();
+        Assert.NotNull(preserved);
+        Assert.Equal("Europe/Warsaw", preserved.TimeZone);
+
+        using var invalid = await client.PostAsJsonAsync(
+            "/api/nvrs",
+            new
+            {
+                name = "Bad clock",
+                baseUrl = "rtsp://192.168.10.61:554",
+                timeZone = "Not/AZone",
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
     private static async Task<NvrResponse> CreateNvrAsync(
         HttpClient client,
         string name = "House NVR",
         string baseUrl = "rtsp://192.168.1.64:554",
         string? transport = null,
-        int? sdkPort = null)
+        int? sdkPort = null,
+        string? timeZone = null)
     {
         using var response = await client.PostAsJsonAsync(
             "/api/nvrs",
-            new { name, baseUrl, transport, sdkPort });
+            new { name, baseUrl, transport, sdkPort, timeZone });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var nvr = await response.Content.ReadFromJsonAsync<NvrResponse>();

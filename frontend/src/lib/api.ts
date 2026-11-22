@@ -2,6 +2,7 @@ import type {
   AlarmSearchResult,
   Camera,
   Nvr,
+  NvrClock,
   RecordingSearchResult,
   User,
 } from './types';
@@ -86,10 +87,11 @@ export const api = {
     baseUrl: string,
     transport: Nvr['transport'] = 'rtsp',
     sdkPort = 8000,
+    timeZone = '',
   ) =>
     request<Nvr>('/api/nvrs', {
       method: 'POST',
-      body: JSON.stringify({ name, baseUrl, transport, sdkPort }),
+      body: JSON.stringify({ name, baseUrl, transport, sdkPort, timeZone }),
     }),
   updateNvr: (
     id: string,
@@ -97,6 +99,7 @@ export const api = {
     baseUrl: string,
     transport?: Nvr['transport'],
     sdkPort?: number,
+    timeZone?: string,
   ) => {
     const body: Record<string, unknown> = { name, baseUrl };
     if (transport !== undefined) {
@@ -105,6 +108,9 @@ export const api = {
     if (sdkPort !== undefined) {
       body.sdkPort = sdkPort;
     }
+    if (timeZone !== undefined) {
+      body.timeZone = timeZone;
+    }
     return request<Nvr>(`/api/nvrs/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -112,6 +118,8 @@ export const api = {
   },
   deleteNvr: (id: string) =>
     request<void>(`/api/nvrs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getNvrClock: (id: string) =>
+    request<NvrClock>(`/api/nvrs/${encodeURIComponent(id)}/clock`),
 
   listCameras: () => request<Camera[]>('/api/cameras'),
   createCamera: (nvrId: string, name: string, mainStreamId: string, subStreamId: string) =>

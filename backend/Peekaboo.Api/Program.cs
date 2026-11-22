@@ -52,6 +52,9 @@ builder.Services.AddSingleton<IHikvisionRecordingSearch>(services => new Hikvisi
 builder.Services.AddSingleton(IsapiOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<IsapiHttpClient>();
 builder.Services.AddSingleton<IsapiEndpointResolver>();
+builder.Services.AddSingleton<NvrClockResolver>();
+builder.Services.AddSingleton<INvrClockResolver>(
+    services => services.GetRequiredService<NvrClockResolver>());
 builder.Services.AddSingleton<IIsapiClient, IsapiClient>();
 builder.Services.AddSingleton<IIsapiAlarmLogClient, IsapiAlarmLogClient>();
 // Any future cache consumer must set MemoryCacheEntryOptions.Size.

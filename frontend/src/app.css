@@ -766,6 +766,19 @@ input[type='checkbox'] {
   border-top: 1px solid var(--border);
 }
 
+.nvr-clock {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+}
+
+.nvr-clock-error {
+  color: #ffb3c0;
+  font-size: 0.78rem;
+}
+
 .nvr-cameras .camera-row {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);

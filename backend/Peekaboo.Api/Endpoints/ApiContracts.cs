@@ -12,6 +12,7 @@ public sealed record NvrRequest(
     string? Name,
     string? BaseUrl,
     string? Transport,
-    int? SdkPort);
+    int? SdkPort,
+    string? TimeZone);
 
 public sealed record CameraRequest(string? Name, string? MainStreamId, string? SubStreamId);

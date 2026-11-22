@@ -7,7 +7,16 @@ public sealed record NvrDto(
     string Transport,
     int SdkPort,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string TimeZone = "");
+
+public sealed record NvrClockDto(
+    string NvrId,
+    string TimeZone,
+    string Source,
+    string LocalTime,
+    int OffsetMinutes,
+    string? Error);
 
 public static class NvrTransports
 {
@@ -120,6 +129,37 @@ public static class NvrValidation
         sdkPort is >= 1 and <= 65535
             ? null
             : "The SDK port must be between 1 and 65535.";
+
+    public static string? TimeZoneError(string? timeZone)
+    {
+        if (string.IsNullOrWhiteSpace(timeZone))
+        {
+            return null;
+        }
+
+        var trimmed = timeZone.Trim();
+        if (trimmed.Length > 100)
+        {
+            return "The time zone name must be at most 100 characters.";
+        }
+
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById(trimmed);
+            return null;
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return $"Unknown time zone '{trimmed}'. Use an IANA name such as Europe/Warsaw.";
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return $"The time zone '{trimmed}' is not valid on this server.";
+        }
+    }
+
+    public static string NormalizeTimeZone(string? timeZone) =>
+        string.IsNullOrWhiteSpace(timeZone) ? string.Empty : timeZone.Trim();
 
     /// <summary>
     /// Returns the canonical stored form: lowercase scheme and authority only. A bare

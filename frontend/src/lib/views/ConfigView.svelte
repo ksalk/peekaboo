@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { api, ApiError, errorMessage } from '../api';
-  import type { Camera, Nvr } from '../types';
+  import { parseLocalDateTimeInput, toDisplayDateTime } from '../date-time';
+  import type { Camera, Nvr, NvrClock } from '../types';
 
   type NvrForm = {
     id: string | null;
@@ -9,7 +11,19 @@
     baseUrl: string;
     transport: Nvr['transport'];
     sdkPort: number;
+    timeZone: string;
   };
+
+  const FALLBACK_TIME_ZONES = [
+    'UTC',
+    'Europe/Warsaw',
+    'Europe/London',
+    'Europe/Berlin',
+    'America/New_York',
+    'America/Los_Angeles',
+    'Asia/Tokyo',
+    'Australia/Sydney',
+  ];
 
   type CameraForm = {
     nvrId: string;
@@ -31,6 +45,12 @@
   let cameraForm = $state<CameraForm | null>(null);
   let cameraSaving = $state(false);
   let cameraFormError = $state<string | null>(null);
+
+  let clockResults = $state<Record<string, NvrClock>>({});
+  let clockErrors = $state<Record<string, string>>({});
+  let clockLoading = new SvelteSet<string>();
+
+  const timeZones = supportedTimeZones();
 
   onMount(() => {
     void load();
@@ -59,7 +79,14 @@
   }
 
   function startCreateNvr() {
-    nvrForm = { id: null, name: '', baseUrl: '', transport: 'rtsp', sdkPort: 8000 };
+    nvrForm = {
+      id: null,
+      name: '',
+      baseUrl: '',
+      transport: 'rtsp',
+      sdkPort: 8000,
+      timeZone: '',
+    };
     nvrFormError = null;
     cameraForm = null;
     cameraFormError = null;
@@ -72,6 +99,7 @@
       baseUrl: nvr.baseUrl,
       transport: nvr.transport,
       sdkPort: nvr.sdkPort,
+      timeZone: nvr.timeZone,
     };
     nvrFormError = null;
     cameraForm = null;
@@ -107,17 +135,20 @@
           form.baseUrl.trim(),
           form.transport,
           form.sdkPort,
+          form.timeZone.trim(),
         );
         nvrs = sortNvrs(nvrs.map((nvr) => (nvr.id === updated.id ? updated : nvr)));
         cameras = cameras.map((camera) =>
           camera.nvrId === updated.id ? { ...camera, nvrName: updated.name } : camera,
         );
+        clearClockState(updated.id);
       } else {
         const created = await api.createNvr(
           form.name.trim(),
           form.baseUrl.trim(),
           form.transport,
           form.sdkPort,
+          form.timeZone.trim(),
         );
         nvrs = sortNvrs([...nvrs, created]);
       }
@@ -156,6 +187,7 @@
 
     nvrs = nvrs.filter((existing) => existing.id !== nvr.id);
     cameras = cameras.filter((camera) => camera.nvrId !== nvr.id);
+    clearClockState(nvr.id);
 
     if (nvrForm?.id === nvr.id) {
       nvrForm = null;
@@ -261,6 +293,56 @@
     }
   }
 
+  async function checkClock(nvr: Nvr) {
+    clockLoading.add(nvr.id);
+    clearClockError(nvr.id);
+
+    try {
+      const clock = await api.getNvrClock(nvr.id);
+      clockResults = { ...clockResults, [nvr.id]: clock };
+    } catch (cause) {
+      clockErrors = { ...clockErrors, [nvr.id]: errorMessage(cause) };
+    } finally {
+      clockLoading.delete(nvr.id);
+    }
+  }
+
+  function clearClockState(id: string) {
+    if (clockResults[id]) {
+      const next = { ...clockResults };
+      delete next[id];
+      clockResults = next;
+    }
+
+    clearClockError(id);
+  }
+
+  function clearClockError(id: string) {
+    if (clockErrors[id] !== undefined) {
+      const next = { ...clockErrors };
+      delete next[id];
+      clockErrors = next;
+    }
+  }
+
+  function formatClock(clock: NvrClock): string {
+    const wall = clock.localTime.slice(0, 19);
+    const parsed = parseLocalDateTimeInput(wall);
+    return parsed ? toDisplayDateTime(parsed) : wall;
+  }
+
+  function supportedTimeZones(): string[] {
+    const intl = Intl as unknown as {
+      supportedValuesOf?: (key: string) => string[];
+    };
+
+    try {
+      return intl.supportedValuesOf?.('timeZone') ?? FALLBACK_TIME_ZONES;
+    } catch {
+      return FALLBACK_TIME_ZONES;
+    }
+  }
+
   function sortNvrs(list: Nvr[]): Nvr[] {
     return [...list].sort((left, right) => left.name.localeCompare(right.name));
   }
@@ -341,6 +423,30 @@
         </label>
       {/if}
 
+      <label>
+        Time zone
+        <input
+          bind:value={nvrForm.timeZone}
+          list="nvr-time-zones"
+          maxlength="100"
+          placeholder="Auto-detect, or Europe/Warsaw"
+          spellcheck="false"
+          autocapitalize="none"
+        />
+      </label>
+
+      <datalist id="nvr-time-zones">
+        {#each timeZones as timeZone (timeZone)}
+          <option value={timeZone}></option>
+        {/each}
+      </datalist>
+
+      <p class="hint">
+        Leave the time zone empty to read it from the NVR. Set an IANA zone such as
+        <code>Europe/Warsaw</code> if recordings are shifted by an hour or the NVR
+        clock cannot be reached.
+      </p>
+
       <p class="hint">
         {#if nvrForm.transport === 'sdk'}
           The SDK transport uses the NVR's private-protocol port (usually 8000).
@@ -389,7 +495,27 @@
               <span class="badge">
                 {nvr.transport === 'sdk' ? `SDK :${nvr.sdkPort}` : 'RTSP'}
               </span>
+              <span class="badge">{nvr.timeZone || 'auto time zone'}</span>
               <code class="url" title={nvr.baseUrl}>{nvr.baseUrl}</code>
+              <div class="nvr-clock">
+                <button
+                  class="button small ghost"
+                  type="button"
+                  disabled={clockLoading.has(nvr.id)}
+                  onclick={() => void checkClock(nvr)}
+                >
+                  {clockLoading.has(nvr.id) ? 'Checking clock…' : 'Check clock'}
+                </button>
+                {#if clockResults[nvr.id]}
+                  {@const clock = clockResults[nvr.id]!}
+                  <span class="muted small-text">
+                    NVR clock: {formatClock(clock)} · {clock.timeZone}
+                    ({clock.source}{clock.error ? ` — ${clock.error}` : ''})
+                  </span>
+                {:else if clockErrors[nvr.id]}
+                  <span class="nvr-clock-error">{clockErrors[nvr.id]}</span>
+                {/if}
+              </div>
             </div>
 
             <div class="actions">

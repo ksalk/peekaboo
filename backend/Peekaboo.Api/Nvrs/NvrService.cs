@@ -7,7 +7,7 @@ namespace Peekaboo.Api.Nvrs;
 public sealed class NvrService(AppDatabase database)
 {
     private const string Columns =
-        "id, name, base_url, transport, sdk_port, created_at, updated_at";
+        "id, name, base_url, transport, sdk_port, created_at, updated_at, time_zone";
 
     public IReadOnlyList<NvrDto> List()
     {
@@ -35,9 +35,12 @@ public sealed class NvrService(AppDatabase database)
         string name,
         string baseUrl,
         string transport = NvrTransports.Rtsp,
-        int sdkPort = NvrTransports.DefaultSdkPort)
+        int sdkPort = NvrTransports.DefaultSdkPort,
+        string? timeZone = null)
     {
         ValidateTransport(transport, sdkPort);
+        var normalizedTimeZone = NvrValidation.NormalizeTimeZone(timeZone);
+        ValidateTimeZone(normalizedTimeZone);
 
         var id = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
@@ -45,8 +48,8 @@ public sealed class NvrService(AppDatabase database)
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO nvrs (id, name, base_url, transport, sdk_port, created_at, updated_at)
-            VALUES ($id, $name, $baseUrl, $transport, $sdkPort, $createdAt, $updatedAt)
+            INSERT INTO nvrs (id, name, base_url, transport, sdk_port, created_at, updated_at, time_zone)
+            VALUES ($id, $name, $baseUrl, $transport, $sdkPort, $createdAt, $updatedAt, $timeZone)
             """;
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", name);
@@ -55,9 +58,10 @@ public sealed class NvrService(AppDatabase database)
         command.Parameters.AddWithValue("$sdkPort", sdkPort);
         command.Parameters.AddWithValue("$createdAt", Timestamp(now));
         command.Parameters.AddWithValue("$updatedAt", Timestamp(now));
+        command.Parameters.AddWithValue("$timeZone", normalizedTimeZone);
         command.ExecuteNonQuery();
 
-        return new NvrDto(id, name, baseUrl, transport, sdkPort, now, now);
+        return new NvrDto(id, name, baseUrl, transport, sdkPort, now, now, normalizedTimeZone);
     }
 
     public NvrDto? Update(
@@ -65,13 +69,19 @@ public sealed class NvrService(AppDatabase database)
         string name,
         string baseUrl,
         string transport,
-        int sdkPort)
+        int sdkPort,
+        string? timeZone = null)
     {
         ValidateTransport(transport, sdkPort);
 
         var now = DateTimeOffset.UtcNow;
 
         using var connection = database.Open();
+        var normalizedTimeZone = timeZone is null
+            ? ReadTimeZone(connection, id) ?? string.Empty
+            : NvrValidation.NormalizeTimeZone(timeZone);
+        ValidateTimeZone(normalizedTimeZone);
+
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
@@ -80,6 +90,7 @@ public sealed class NvrService(AppDatabase database)
                     base_url = $baseUrl,
                     transport = $transport,
                     sdk_port = $sdkPort,
+                    time_zone = $timeZone,
                     updated_at = $updatedAt
                 WHERE id = $id
                 """;
@@ -88,6 +99,7 @@ public sealed class NvrService(AppDatabase database)
             command.Parameters.AddWithValue("$baseUrl", baseUrl);
             command.Parameters.AddWithValue("$transport", transport);
             command.Parameters.AddWithValue("$sdkPort", sdkPort);
+            command.Parameters.AddWithValue("$timeZone", normalizedTimeZone);
             command.Parameters.AddWithValue("$updatedAt", Timestamp(now));
 
             if (command.ExecuteNonQuery() == 0)
@@ -149,6 +161,14 @@ public sealed class NvrService(AppDatabase database)
         return reader.Read() ? ReadNvr(reader) : null;
     }
 
+    private static string? ReadTimeZone(SqliteConnection connection, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT time_zone FROM nvrs WHERE id = $id";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() as string;
+    }
+
     private static NvrDto ReadNvr(SqliteDataReader reader) =>
         new(
             reader.GetString(0),
@@ -157,7 +177,8 @@ public sealed class NvrService(AppDatabase database)
             reader.GetString(3),
             reader.GetInt32(4),
             ParseTimestamp(reader.GetString(5)),
-            ParseTimestamp(reader.GetString(6)));
+            ParseTimestamp(reader.GetString(6)),
+            reader.GetString(7));
 
     private static void ValidateTransport(string transport, int sdkPort)
     {
@@ -169,6 +190,14 @@ public sealed class NvrService(AppDatabase database)
         if (NvrValidation.SdkPortError(sdkPort) is { } portError)
         {
             throw new ArgumentOutOfRangeException(nameof(sdkPort), portError);
+        }
+    }
+
+    private static void ValidateTimeZone(string timeZone)
+    {
+        if (NvrValidation.TimeZoneError(timeZone) is { } error)
+        {
+            throw new ArgumentException(error, nameof(timeZone));
         }
     }
 

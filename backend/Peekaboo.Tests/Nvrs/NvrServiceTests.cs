@@ -34,19 +34,22 @@ public sealed class NvrServiceTests : IDisposable
         Assert.Equal("rtsp://192.168.1.64:554", listed.BaseUrl);
         Assert.Equal(NvrTransports.Rtsp, listed.Transport);
         Assert.Equal(NvrTransports.DefaultSdkPort, listed.SdkPort);
+        Assert.Equal(string.Empty, listed.TimeZone);
 
         var updated = _nvrs.Update(
             created.Id,
             "Garage NVR",
             "rtsps://192.168.1.65:322",
             NvrTransports.HikvisionSdk,
-            8001);
+            8001,
+            "Europe/Warsaw");
 
         Assert.NotNull(updated);
         Assert.Equal("Garage NVR", updated.Name);
         Assert.Equal("rtsps://192.168.1.65:322", updated.BaseUrl);
         Assert.Equal(NvrTransports.HikvisionSdk, updated.Transport);
         Assert.Equal(8001, updated.SdkPort);
+        Assert.Equal("Europe/Warsaw", updated.TimeZone);
         Assert.Equal(created.CreatedAt, updated.CreatedAt);
         Assert.True(updated.UpdatedAt >= created.UpdatedAt);
 
@@ -134,6 +137,31 @@ public sealed class NvrServiceTests : IDisposable
                 "rtsp://192.168.1.64:554",
                 NvrTransports.HikvisionSdk,
                 0));
+        Assert.Empty(_nvrs.List());
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("Europe/Warsaw", true)]
+    [InlineData("UTC", true)]
+    [InlineData("Not/AZone", false)]
+    public void Time_zone_validation_accepts_empty_and_iana_names(string? timeZone, bool valid)
+    {
+        var error = NvrValidation.TimeZoneError(timeZone);
+        Assert.Equal(valid, error is null);
+    }
+
+    [Fact]
+    public void Create_rejects_an_invalid_time_zone()
+    {
+        Assert.Throws<ArgumentException>(
+            () => _nvrs.Create(
+                "House NVR",
+                "rtsp://192.168.1.64:554",
+                NvrTransports.Rtsp,
+                NvrTransports.DefaultSdkPort,
+                "Not/AZone"));
         Assert.Empty(_nvrs.List());
     }
 

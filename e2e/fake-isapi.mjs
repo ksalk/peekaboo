@@ -45,6 +45,21 @@ async function handle(request, response) {
     return;
   }
 
+  if (request.method === 'GET' && request.url === '/ISAPI/System/time') {
+    const localTime = new Date(Date.now() + 60 * 60 * 1000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/, '+01:00');
+
+    response.writeHead(200, { 'Content-Type': 'application/xml' });
+    response.end(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Time><timeMode>manual</timeMode>' +
+        `<localTime>${localTime}</localTime>` +
+        '<timeZone>CET-1CEST,M3.5.0/2,M10.5.0/3</timeZone></Time>',
+    );
+    return;
+  }
+
   if (request.method === 'POST' && request.url === '/ISAPI/ContentMgmt/search') {
     const body = await readBody(request);
     const trackId = body.match(/<trackID>(\d+)<\/trackID>/)?.[1] ?? '101';
