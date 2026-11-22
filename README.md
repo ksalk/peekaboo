@@ -19,14 +19,15 @@ stream. The same rule applies to recorded playback.
   configurable caps. Works over RTSP or the Hikvision SDK.
 - **Grid layouts** — 1×1, 1×2, 2×1, 2×2 and 3×3; click a cell to assign a camera.
   Layouts and assignments are remembered per device and never auto-start.
-- **Playback** — search a camera's NVR recordings by day and play segments in the
-  browser. RTSP recordings also expose credential-free RTSP URLs for another player.
+- **Playback** — search a camera's NVR recordings over a From/To date-time range,
+  explore them on a zoomable, draggable timeline, and play segments in the browser.
+  RTSP recordings also expose credential-free RTSP URLs for another player.
 - **Motion alarms** — read the NVR's alarm log over ISAPI, pair motion start/stop
-  entries into ranges, and show them on the playback timeline and a dedicated
-  **Alarms** page. No persistent alert-stream connection and no local alarm history.
+  entries into ranges, and show them as day timelines with hover details and direct
+  playback links. No persistent alert-stream connection and no local alarm history.
 - **NVR and camera management** — add an NVR by IP/hostname (or an explicit RTSP URL),
-  choose RTSP + ISAPI or the Hikvision SDK transport, then add cameras with their
-  ISAPI main and sub stream IDs. Stored in SQLite.
+  choose RTSP + ISAPI or the Hikvision SDK transport, optionally pin its time zone, then
+  add cameras with their ISAPI main and sub stream IDs. Stored in SQLite.
 - **Main/Sub switching** — feeds use the substream by default and can switch to the
   main stream per cell while live.
 - **Accounts** — cookie-based login, PBKDF2 password hashes, admin-managed users.
@@ -103,10 +104,14 @@ For RTSP NVRs:
   motion-only recordings instead of the 30-second live watchdog. When the recording
   ends cleanly the browser receives `{"type":"ended"}` instead of an error.
 - Playback URLs shown in the UI contain the NVR host but **no credentials**. They can
-  be copied into VLC or another RTSP player, where the NVR username and password must
-  be supplied separately.
-- Playback starts at the selected segment or time. There is no timeline scrubbing or
-  seeking yet.
+  be copied from the player header into VLC or another RTSP player, where the NVR
+  username and password must be supplied separately.
+- The recording timeline supports zoom (magnifying-glass buttons) and mouse drag
+  panning. Hover or focus a recording for its time range, duration, and codec; click it
+  to play.
+- Playback starts at the selected segment or time. There is no native timeline
+  scrubbing beyond the buffered stream; use **Jump to** and **Play from here** to
+  restart the NVR stream at another time.
 
 For SDK NVRs, playback uses `NET_DVR_PlayBackByTime_V50` and the same
 ffmpeg/WebSocket relay. It starts at the requested time, stops at the SDK end marker,
@@ -128,14 +133,19 @@ Pagination advances by the rows the NVR actually returns, so firmware that retur
 64 rows per page is handled correctly.
 
 - The playback timeline shows a **Motion** lane above recording coverage.
-- The **Alarms** page searches by camera, target, and time with Today, Yesterday, and
-  Last 7 days shortcuts.
+- The **Alarms** page renders one timeline per day with a lane per camera. Hover or
+  focus an alarm for its target, camera, NVR channel, duration, and a link that opens
+  Playback at the alarm time.
+- Quick ranges on both **Playback** and **Alarms** are Today, Yesterday, and Last 7
+  days. A From/To date-time range is available for anything else.
 - Ranges are fetched on demand and cached in memory for 30 seconds. Nothing is written
   to SQLite, so history is limited by the NVR's log retention.
 - A query may span at most 31 days.
 - The NVR must have motion detection enabled and retain its alarm log. The alert-stream
   "Notify Surveillance Center" permission is not required for this mode.
-- NVR log timestamps are treated as UTC. Keep the NVR clock and timezone correct.
+- Peekaboo reads the NVR's `/ISAPI/System/time` time zone (including DST rules) and
+  treats device timestamps as NVR-local wall time. Set a per-NVR IANA time zone in
+  **NVRs** if auto-detection is unavailable or wrong.
 - Target labels come from the NVR's localized log text (`Osoba`, `Pojazd`,
   `Person`, `Vehicle`, …); Peekaboo normalizes the known values to person/vehicle.
 - SDK-transport NVRs still need their HTTP(S) ISAPI service reachable for log search.
@@ -276,17 +286,19 @@ written to SQLite.
 
 ## Usage
 
-1. Add NVRs and cameras under **NVRs**.
+1. Add NVRs and cameras under **NVRs**. The NVR time zone is detected automatically;
+   set an IANA override there if recordings are shifted.
 2. Open **Feeds**, choose a grid layout, and click a cell to pick a camera.
 3. Press **Start** in the cell. Use **Sub/Main** to change quality, and **Stop** when
    you are done.
 4. Use **Stop all** to release every stream at once.
-5. Open **Playback**, choose a camera and date, then press **Search recordings**. Use
-   **Play** to watch a segment or, for RTSP NVRs, **Copy URL** to use the
-   credential-free RTSP URL in another player. The player has native browser controls;
+5. Open **Playback**, choose a camera and a From/To date-time range, then press
+   **Search recordings**. Hover or focus a recording on the timeline for details and
+   click it to watch. For RTSP NVRs, **Copy stream URL** in the player header copies the
+   credential-free RTSP URL for another player. The player has native browser controls;
    drag **Jump to** and press **Play from here** to restart the NVR stream at another
    time. **Close** releases the playback stream.
-6. Playback also stops on tab hide, navigation, camera/date changes, and new searches.
+6. Playback also stops on tab hide, navigation, camera/range changes, and new searches.
 
 Assignments are stored per layout in this browser's `localStorage`; they survive
 reloads but never start streams automatically. The selected Playback camera is
@@ -512,8 +524,11 @@ See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 - SDK recording search returns file-level segments and does not report a codec type.
 - A search can span at most 31 days and returns at most 1,000 segments; a single
   playback stream can span at most 24 hours.
-- Playback starts at the selected segment or time; there is no timeline scrubbing or
-  seeking yet.
+- Playback starts at the selected segment or time; the timeline supports zoom and
+  horizontal panning, but native seeking is limited to the buffered stream. Use
+  **Play from here** to restart the NVR stream at another time.
+- NVR clock auto-detection needs `/ISAPI/System/time`. If the NVR's timestamps are
+  still shifted, set an explicit IANA time zone (or `UTC`) on the NVR.
 - Motion alarms are read directly from the NVR log and are not persisted by Peekaboo.
   History is limited by the NVR's log retention.
 - Only `motionStart` / `motionStop` alarm subtypes are displayed. Other NVR alarm

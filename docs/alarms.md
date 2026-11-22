@@ -56,7 +56,11 @@ Protocol details:
 - The element is **`<metaId>`**, not `<metaID>`. The capital `D` makes some firmware
   return a misleading `badXmlContent` / “two root tags” error.
 - The firmware expects the misspelled **`<searchResultPostion>`**.
-- Times are UTC ISO 8601.
+- Peekaboo writes request `<startTime>`/`<endTime>` in the NVR's wall clock with a
+  literal `Z`, matching firmware behavior.
+- Hikvision firmware commonly returns `StartDateTime` as device-local wall time with
+  a literal `Z` suffix. Peekaboo treats both directions as NVR-local and converts
+  through the NVR's `/ISAPI/System/time` zone (or the per-NVR override).
 - `log.std-cgi.com/Alarm` returns the major alarm log. Peekaboo keeps only
   `motionStart` and `motionStop`; other alarm subtypes are ignored.
 - The NVR may return fewer rows than `maxResults` (often 64). Pagination advances by
@@ -132,11 +136,28 @@ visibility model.
 ## UI
 
 - **Playback** draws a merged **Motion** lane above recording coverage. Person,
-  vehicle, and unclassified motion use different colours.
-- **Alarms** (`#/alarms`) has camera, target, and time filters, with Today, Yesterday,
-  and Last 7 days shortcuts. It defaults to the last 24 hours.
-- Alarm rows show the camera, NVR channel, target, duration, and estimated-boundary
-  badges.
+  vehicle, and unclassified motion use different colours. Hover a motion range, or
+  hover or focus a recording range, for its details.
+- **Alarms** (`#/alarms`) has camera, target, and From/To filters, with Today,
+  Yesterday, and Last 7 days shortcuts. It defaults to Today.
+- Alarm results are grouped into one timeline per day, with a lane per camera.
+  Hovering or focusing an alarm shows its target, camera, NVR channel, duration, and
+  an **Open in playback** link that searches around the alarm time and auto-plays the
+  covering recording when one exists.
+
+## NVR clock
+
+Peekaboo reads `GET /ISAPI/System/time` and parses the device's POSIX time-zone string,
+including DST rules. The resolved clock is cached per NVR for ten minutes. Use the
+**Check clock** button on the NVRs page to inspect the detected zone and wall time.
+
+If auto-detection is unavailable or the NVR firmware reports the wrong zone, set an
+IANA time zone (for example `Europe/Warsaw`) in the NVR form. Leave it empty for
+auto-detection. A `UTC` override is available for firmware that genuinely reports UTC.
+
+Non-UTC SDK transports encode local wall time plus the offset; verify SDK playback
+against the video OSD once on your hardware. If it is shifted, set the matching
+override (or `UTC`) and report the firmware behavior.
 
 ## Troubleshooting
 
@@ -148,7 +169,8 @@ visibility model.
   check that the NVR retains alarm logs. Motion does not need to be linked to Notify
   Surveillance Center for this feature, but it does need to be detected.
 - **Times are shifted** — check the NVR clock, timezone, and NTP settings. Peekaboo
-  treats the log's `StartDateTime` as UTC.
+  uses the NVR's reported time zone; if it is wrong or unreachable, set an IANA zone
+  explicitly on the NVR. The **Check clock** button shows what Peekaboo detected.
 - **Alarms have no camera** — the event channel is mapped with the camera's main
   stream ID (`101` → channel 1, `201` → channel 2). Check the stream ID on the NVRs
   page.
