@@ -87,7 +87,8 @@ public sealed class PlaybackService
                 source.SdkPort,
                 isapiChannel,
                 start,
-                end);
+                end,
+                timeZone);
         }
 
         throw new InvalidOperationException(
@@ -121,7 +122,8 @@ public sealed class PlaybackService
                     source.SdkPort,
                     source.MainStreamId,
                     start,
-                    end),
+                    end,
+                    clock.TimeZone),
                 cancellationToken);
 
             return new RecordingSearchDto(

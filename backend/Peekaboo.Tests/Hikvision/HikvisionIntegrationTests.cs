@@ -176,7 +176,8 @@ public sealed class HikvisionIntegrationTests
                 port,
                 isapiChannel,
                 start,
-                start.AddSeconds(seconds)),
+                start.AddSeconds(seconds),
+                TestNvrTimeZones.Utc),
             pool,
             NullLogger<HikvisionPlaybackInput>.Instance);
 
@@ -250,7 +251,8 @@ public sealed class HikvisionIntegrationTests
                 port,
                 "101",
                 start,
-                start.AddMinutes(5)),
+                start.AddMinutes(5),
+                TestNvrTimeZones.Utc),
             CancellationToken.None);
 
         Assert.NotEmpty(result.Segments);

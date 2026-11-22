@@ -41,7 +41,8 @@ public sealed class StreamSourceTests
             8000,
             IsapiChannel: 1,
             start,
-            end);
+            end,
+            TestNvrTimeZones.Utc);
 
         Assert.True(source.IsPlayback);
         Assert.Equal(TimeSpan.FromMinutes(5), source.MaximumDuration);

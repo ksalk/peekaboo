@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Hikvision;
 
 internal sealed record HikvisionSearchRequest(
@@ -9,7 +11,8 @@ internal sealed record HikvisionSearchRequest(
     int SdkPort,
     string MainStreamId,
     DateTimeOffset Start,
-    DateTimeOffset End);
+    DateTimeOffset End,
+    INvrTimeZone TimeZone);
 
 internal sealed record HikvisionRecordingSegment(
     DateTimeOffset Start,
@@ -58,7 +61,21 @@ internal sealed class HikvisionRecordingSearch(
         var sdkChannel = HikvisionChannelMap.Map(
             lease.Connection.Device,
             isapiChannel);
-        var condition = CreateCondition(sdkChannel, request.Start, request.End);
+        var offset = request.TimeZone.GetUtcOffset(request.Start.UtcDateTime);
+        if (offset != TimeSpan.Zero)
+        {
+            logger.LogDebug(
+                "SDK recording search for NVR {NvrId} uses device-local fields " +
+                "with offset {Offset}",
+                request.NvrId,
+                offset);
+        }
+
+        var condition = CreateCondition(
+            sdkChannel,
+            request.Start,
+            request.End,
+            request.TimeZone);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(SearchTimeout);
@@ -126,7 +143,7 @@ internal sealed class HikvisionRecordingSearch(
                     warnedAboutLocalTimes = true;
                     logger.LogWarning(
                         "The NVR returned a recording time without a UTC offset for NVR {NvrId}; " +
-                        "the time is treated as UTC.",
+                        "applying the resolved device time zone.",
                         request.NvrId);
                 }
 
@@ -135,8 +152,12 @@ internal sealed class HikvisionRecordingSearch(
 
                 try
                 {
-                    start = HikvisionTime.FromSearch(data.struStartTime).ToUniversalTime();
-                    end = HikvisionTime.FromSearch(data.struStopTime).ToUniversalTime();
+                    start = HikvisionTime.FromSearch(
+                        data.struStartTime,
+                        request.TimeZone);
+                    end = HikvisionTime.FromSearch(
+                        data.struStopTime,
+                        request.TimeZone);
                 }
                 catch (HikvisionException exception) when (
                     exception.Kind == HikvisionFailureKind.Device)
@@ -220,7 +241,8 @@ internal sealed class HikvisionRecordingSearch(
     private static NetDvrFileCondV50 CreateCondition(
         int sdkChannel,
         DateTimeOffset start,
-        DateTimeOffset end) =>
+        DateTimeOffset end,
+        INvrTimeZone timeZone) =>
         new()
         {
             struStreamID = new NetDvrStreamInfo
@@ -230,8 +252,8 @@ internal sealed class HikvisionRecordingSearch(
                 dwChannel = (uint)sdkChannel,
                 byRes = new byte[32],
             },
-            struStartTime = HikvisionTime.ToSearchCond(start),
-            struStopTime = HikvisionTime.ToSearchCond(end),
+            struStartTime = HikvisionTime.ToSearchCond(start, timeZone),
+            struStopTime = HikvisionTime.ToSearchCond(end, timeZone),
             byFindType = 0,
             byDrawFrame = 0,
             byQuickSearch = 0,

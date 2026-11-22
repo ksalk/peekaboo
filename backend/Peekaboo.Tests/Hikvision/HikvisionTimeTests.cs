@@ -1,4 +1,5 @@
 using Peekaboo.Api.Hikvision;
+using Peekaboo.Api.Nvrs;
 using Xunit;
 
 namespace Peekaboo.Tests.Hikvision;
@@ -10,7 +11,7 @@ public sealed class HikvisionTimeTests
     {
         var value = new DateTimeOffset(2026, 11, 20, 10, 0, 1, 250, TimeSpan.Zero);
 
-        var time = HikvisionTime.ToV50(value);
+        var time = HikvisionTime.ToV50(value, TestNvrTimeZones.Utc);
 
         Assert.Equal(2026, time.wYear);
         Assert.Equal(11, time.byMonth);
@@ -25,14 +26,18 @@ public sealed class HikvisionTimeTests
     }
 
     [Fact]
-    public void Non_utc_input_is_converted_to_utc_before_formatting()
+    public void V50_times_use_the_device_wall_clock_and_offset()
     {
-        var value = new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.FromHours(2));
+        var value = new DateTimeOffset(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+        var zone = new TimeZoneInfoNvrTimeZone(
+            TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw"));
 
-        var time = HikvisionTime.ToV50(value);
+        var time = HikvisionTime.ToV50(value, zone);
 
-        Assert.Equal(10, time.byHour);
+        Assert.Equal(12, time.byHour);
         Assert.Equal(1, time.byISO8601);
+        Assert.Equal(2, time.cTimeDifferenceH);
+        Assert.Equal(0, time.cTimeDifferenceM);
     }
 
     [Fact]
@@ -52,19 +57,15 @@ public sealed class HikvisionTimeTests
             wMillisecond = 500,
         };
 
-        var parsed = HikvisionTime.FromSearch(value);
+        var parsed = HikvisionTime.FromSearch(value, TestNvrTimeZones.Utc);
 
-        Assert.Equal(TimeSpan.FromHours(1), parsed.Offset);
-        Assert.Equal(2026, parsed.Year);
-        Assert.Equal(11, parsed.Hour);
-        Assert.Equal(500, parsed.Millisecond);
         Assert.Equal(
             new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero).AddMilliseconds(500),
-            parsed.ToUniversalTime());
+            parsed);
     }
 
     [Fact]
-    public void Search_results_without_an_offset_are_treated_as_utc()
+    public void Search_results_without_an_offset_use_the_resolved_device_zone()
     {
         var value = new NetDvrTimeSearch
         {
@@ -78,10 +79,35 @@ public sealed class HikvisionTimeTests
             byLocalOrUTC = 0,
         };
 
-        var parsed = HikvisionTime.FromSearch(value);
+        var parsed = HikvisionTime.FromSearch(
+            value,
+            new FixedNvrTimeZone("CET", TimeSpan.FromHours(1)));
 
-        Assert.Equal(TimeSpan.Zero, parsed.Offset);
-        Assert.Equal(11, parsed.Hour);
+        Assert.Equal(
+            new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero),
+            parsed);
+    }
+
+    [Fact]
+    public void Search_results_without_an_offset_and_utc_zone_are_utc()
+    {
+        var value = new NetDvrTimeSearch
+        {
+            wYear = 2026,
+            byMonth = 11,
+            byDay = 20,
+            byHour = 11,
+            byMinute = 0,
+            bySecond = 0,
+            cTimeDifferenceH = 8,
+            byLocalOrUTC = 0,
+        };
+
+        var parsed = HikvisionTime.FromSearch(value, TestNvrTimeZones.Utc);
+
+        Assert.Equal(
+            new DateTimeOffset(2026, 11, 20, 11, 0, 0, TimeSpan.Zero),
+            parsed);
     }
 
     [Fact]
@@ -95,17 +121,18 @@ public sealed class HikvisionTimeTests
             byHour = 11,
         };
 
-        var exception = Assert.Throws<HikvisionException>(
-            () => HikvisionTime.FromSearch(value));
+        var exception = Assert.Throws<HikvisionException>(() =>
+            HikvisionTime.FromSearch(value, TestNvrTimeZones.Utc));
 
         Assert.Equal(HikvisionFailureKind.Device, exception.Kind);
     }
 
     [Fact]
-    public void Search_conditions_mark_the_time_as_utc()
+    public void Search_conditions_use_utc_for_a_utc_zone()
     {
         var time = HikvisionTime.ToSearchCond(
-            new DateTimeOffset(2026, 11, 20, 23, 59, 59, TimeSpan.Zero));
+            new DateTimeOffset(2026, 11, 20, 23, 59, 59, TimeSpan.Zero),
+            TestNvrTimeZones.Utc);
 
         Assert.Equal(2026, time.wYear);
         Assert.Equal(11, time.byMonth);
@@ -116,5 +143,43 @@ public sealed class HikvisionTimeTests
         Assert.Equal(1, time.byLocalOrUTC);
         Assert.Equal(0, time.cTimeDifferenceH);
         Assert.Equal(0, time.cTimeDifferenceM);
+    }
+
+    [Fact]
+    public void Search_conditions_use_the_device_wall_clock_and_offset()
+    {
+        var time = HikvisionTime.ToSearchCond(
+            new DateTimeOffset(2026, 11, 20, 23, 59, 59, TimeSpan.Zero),
+            new FixedNvrTimeZone("CET", TimeSpan.FromHours(1)));
+
+        Assert.Equal(21, time.byDay);
+        Assert.Equal(0, time.byHour);
+        Assert.Equal(59, time.byMinute);
+        Assert.Equal(59, time.bySecond);
+        Assert.Equal(1, time.byLocalOrUTC);
+        Assert.Equal(1, time.cTimeDifferenceH);
+        Assert.Equal(0, time.cTimeDifferenceM);
+    }
+
+    [Fact]
+    public void V50_and_search_conditions_encode_a_negative_sub_hour_offset()
+    {
+        var value = new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero);
+        var zone = new FixedNvrTimeZone(
+            "NST",
+            TimeSpan.FromHours(-3) - TimeSpan.FromMinutes(30));
+
+        var v50 = HikvisionTime.ToV50(value, zone);
+        var condition = HikvisionTime.ToSearchCond(value, zone);
+
+        Assert.Equal(8, v50.byHour);
+        Assert.Equal(30, v50.byMinute);
+        Assert.Equal(-3, v50.cTimeDifferenceH);
+        Assert.Equal(-30, v50.cTimeDifferenceM);
+
+        Assert.Equal(8, condition.byHour);
+        Assert.Equal(30, condition.byMinute);
+        Assert.Equal(-3, condition.cTimeDifferenceH);
+        Assert.Equal(-30, condition.cTimeDifferenceM);
     }
 }

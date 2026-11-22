@@ -110,7 +110,8 @@ public sealed class StreamSessionTests : IDisposable
             8000,
             IsapiChannel: 1,
             start,
-            end);
+            end,
+            TestNvrTimeZones.Utc);
         var session = CreateSession(
             script,
             onTerminated: null,

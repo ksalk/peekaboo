@@ -41,6 +41,15 @@ internal sealed class HikvisionPlaybackInput(
         var handle = -1;
         Task? pumpTask = null;
 
+        var offset = source.TimeZone.GetUtcOffset(source.Start.UtcDateTime);
+        if (offset != TimeSpan.Zero)
+        {
+            logger.LogDebug(
+                "Hikvision playback for {Source} uses device-local fields with offset {Offset}",
+                source.SafeDescription,
+                offset);
+        }
+
         try
         {
             // Start draining before PLAYSTART: some NVRs deliver the whole
@@ -176,8 +185,8 @@ internal sealed class HikvisionPlaybackInput(
             dwChannel = (uint)sdkChannel,
             byRes = new byte[32],
         },
-        struBeginTime = HikvisionTime.ToV50(source.Start),
-        struEndTime = HikvisionTime.ToV50(source.End),
+        struBeginTime = HikvisionTime.ToV50(source.Start, source.TimeZone),
+        struEndTime = HikvisionTime.ToV50(source.End, source.TimeZone),
         hWnd = 0,
         byDrawFrame = 0,
         byVolumeType = 0,

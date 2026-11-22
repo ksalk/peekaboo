@@ -1,3 +1,5 @@
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Streaming;
 
 /// <summary>
@@ -63,7 +65,8 @@ public sealed record HikvisionPlaybackStreamSource(
     int SdkPort,
     int IsapiChannel,
     DateTimeOffset Start,
-    DateTimeOffset End) : StreamSource
+    DateTimeOffset End,
+    INvrTimeZone TimeZone) : StreamSource
 {
     public override bool IsPlayback => true;
 
