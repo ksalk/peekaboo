@@ -1676,73 +1676,110 @@ button.feed-center:hover .feed-hint {
   color: var(--text);
 }
 
-.alarm-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.alarm-group h2 {
-  font-size: 1rem;
-}
-
-.alarm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.alarm-row {
+.alarm-day {
   display: grid;
-  grid-template-columns: minmax(190px, 0.9fr) minmax(0, 2fr);
+  grid-template-columns: minmax(170px, 0.7fr) minmax(0, 2fr);
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
+}
+
+.alarm-day-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 1rem;
-  align-items: center;
-  padding: 0.7rem 0.9rem;
+  padding-bottom: 0.1rem;
+}
+
+.alarm-day-header h3 {
+  font-size: 0.95rem;
+}
+
+.alarm-lane {
+  display: contents;
+}
+
+.alarm-lane-label {
+  grid-column: 1;
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.alarm-track {
+  grid-column: 2;
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
   background: var(--surface-raised);
 }
 
-.alarm-time {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+.alarm-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.7;
 }
 
-.alarm-time strong {
+.alarm-bar {
+  position: absolute;
+  height: 14px;
+  min-width: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #94a3b8;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.alarm-bar:hover {
+  filter: brightness(1.25);
+}
+
+.alarm-bar:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  z-index: 2;
+}
+
+.alarm-bar-human {
+  background: #14b8a6;
+}
+
+.alarm-bar-vehicle {
+  background: #f59e0b;
+}
+
+.alarm-bar-unknown {
+  background: #94a3b8;
+}
+
+.alarm-axis {
+  grid-column: 2;
+  position: relative;
+  height: 1.1rem;
+  color: var(--muted);
+  font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
 
-.alarm-time span {
-  font-size: 0.8rem;
+.alarm-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
-.alarm-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.alarm-meta > span:not(.badge) {
-  font-size: 0.85rem;
-}
-
-.badge.alarm-target-human {
-  color: #5eead4;
-  border-color: rgba(20, 184, 166, 0.45);
-  background: rgba(20, 184, 166, 0.16);
-}
-
-.badge.alarm-target-vehicle {
-  color: #fcd34d;
-  border-color: rgba(245, 158, 11, 0.45);
-  background: rgba(245, 158, 11, 0.16);
-}
-
-.badge.alarm-target-unknown {
-  color: var(--muted);
+.tooltip-link {
+  display: inline-flex;
+  margin-top: 0.55rem;
 }
 
 @media (max-width: 960px) {
@@ -1754,8 +1791,14 @@ button.feed-center:hover .feed-hint {
     justify-content: flex-start;
   }
 
-  .alarm-row {
+  .alarm-day {
     grid-template-columns: 1fr;
+  }
+
+  .alarm-lane-label,
+  .alarm-track,
+  .alarm-axis {
+    grid-column: 1;
   }
 }
 

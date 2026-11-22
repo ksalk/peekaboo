@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { SvelteDate, SvelteMap } from 'svelte/reactivity';
   import { api, errorMessage } from '../api';
+  import AlarmTimeline from '../components/AlarmTimeline.svelte';
   import DateTimeField from '../components/DateTimeField.svelte';
+  import SearchStatus from '../components/SearchStatus.svelte';
   import {
-    formatDayLabel,
-    formatTime,
     parseLocalDateTimeInput,
     quickRange,
     toExclusiveEnd,
     toLocalDateTimeInput,
     type QuickRangeName,
   } from '../date-time';
+  import { buildPlaybackLink } from '../playback-links';
   import { formatDuration } from '../playback-utils';
-  import type { AlarmRange, AlarmSearchResult, AlarmTarget, Camera } from '../types';
+  import type { AlarmRange, AlarmSearchResult, Camera } from '../types';
 
   let cameras = $state<Camera[]>([]);
   let camerasLoading = $state(true);
@@ -36,7 +36,6 @@
       0,
     ),
   );
-  const groups = $derived(groupRanges(result?.ranges ?? []));
 
   onMount(() => {
     void load();
@@ -134,49 +133,18 @@
     resetResults();
   }
 
-  function targetLabel(value: AlarmTarget): string {
-    return value === 'human' ? 'Person' : value === 'vehicle' ? 'Vehicle' : 'Motion';
-  }
+  function openInPlayback(range: AlarmRange) {
+    const link = buildPlaybackLink({
+      cameraId: range.cameraId,
+      start: range.start,
+      end: range.end,
+      at: range.start,
+      autoplay: true,
+    });
 
-  function displayTarget(range: AlarmRange): string {
-    if (range.target === 'unknown') {
-      return range.targetLabel?.trim() || 'Motion';
+    if (link) {
+      window.location.hash = link;
     }
-
-    return targetLabel(range.target);
-  }
-
-  function targetClass(value: AlarmTarget): string {
-    return `alarm-target-${value}`;
-  }
-
-  function groupRanges(ranges: AlarmRange[]): {
-    key: string;
-    label: string;
-    ranges: AlarmRange[];
-  }[] {
-    const grouped = new SvelteMap<string, AlarmRange[]>();
-
-    for (const range of ranges) {
-      const date = new SvelteDate(range.start);
-      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-      const items = grouped.get(key);
-      if (items) {
-        items.push(range);
-      } else {
-        grouped.set(key, [range]);
-      }
-    }
-
-    return [...grouped.entries()].map(([key, items]) => ({
-      key,
-      label: formatDayLabel(items[0]!.start),
-      ranges: items.sort(
-        (left, right) =>
-          new SvelteDate(right.start).getTime() -
-          new SvelteDate(left.start).getTime(),
-      ),
-    }));
   }
 </script>
 
@@ -269,6 +237,13 @@
       <div class="alert" role="alert">{error}</div>
     {/if}
 
+    {#if loading}
+      <SearchStatus
+        label="Searching alarms…"
+        detail="Reading motion events from the NVR alarm log."
+      />
+    {/if}
+
     {#if result}
       {#if result.errors.length > 0}
         <div class="alert" role="status">
@@ -298,36 +273,11 @@
           <p>Try another camera, target, or time range.</p>
         </div>
       {:else}
-        {#each groups as group (group.key)}
-          <section class="alarm-group">
-            <h2>{group.label}</h2>
-
-            <div class="alarm-list">
-              {#each group.ranges as range (`${range.cameraId}|${range.channelId}|${range.target}|${range.start}|${range.end}`)}
-                <article class="alarm-row">
-                  <div class="alarm-time">
-                    <strong>{formatTime(range.start)} – {formatTime(range.end)}</strong>
-                    <span class="muted">{formatDuration(range.durationSeconds)}</span>
-                  </div>
-
-                  <div class="alarm-meta">
-                    <span class="badge {targetClass(range.target)}">
-                      {displayTarget(range)}
-                    </span>
-                    <span>{range.cameraName}</span>
-                    <span class="muted">{range.nvrName} · channel {range.channelId}</span>
-                    {#if range.inferredStart}
-                      <span class="badge">estimated start</span>
-                    {/if}
-                    {#if range.inferredEnd}
-                      <span class="badge">estimated end</span>
-                    {/if}
-                  </div>
-                </article>
-              {/each}
-            </div>
-          </section>
-        {/each}
+        <p class="hint">
+          Hover or focus an alarm for details. Click it to open the surrounding
+          recording in Playback.
+        </p>
+        <AlarmTimeline ranges={result.ranges} onOpen={openInPlayback} />
       {/if}
     {/if}
   {/if}

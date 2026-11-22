@@ -9,6 +9,7 @@
     children,
     onpointerenter = null,
     onpointerleave = null,
+    onfocusout = null,
   }: {
     x: number;
     y: number;
@@ -17,6 +18,7 @@
     children: Snippet;
     onpointerenter?: (() => void) | null;
     onpointerleave?: (() => void) | null;
+    onfocusout?: ((event: FocusEvent) => void) | null;
   } = $props();
 </script>
 
@@ -29,6 +31,7 @@
   style={`left:${x}px;top:${y}px`}
   onpointerenter={onpointerenter}
   onpointerleave={onpointerleave}
+  onfocusout={onfocusout}
 >
   {@render children()}
 </div>
