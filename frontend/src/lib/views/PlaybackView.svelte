@@ -156,7 +156,11 @@
     }
 
     if (runInitialSearch) {
+      const notice = loadNotice;
       await search();
+      if (result !== null || searchError !== null) {
+        loadNotice = notice ?? loadNotice;
+      }
       tryAutoPlay();
     }
   }
@@ -272,6 +276,7 @@
     motionLoading = false;
     searchError = null;
     copyState = null;
+    loadNotice = null;
   }
 
   function setQuickRange(name: QuickRangeName) {
