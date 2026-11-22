@@ -73,8 +73,13 @@ run = "mise run e2e"
 description = "Build the container image for PEEKABOO_REGISTRY"
 run = '''
 : "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
-image="${PEEKABOO_REGISTRY%/}/peekaboo:${PEEKABOO_TAG:-latest}"
-docker build --tag "$image" .
+version="$(tr -d '[:space:]' < VERSION)"
+tag="${PEEKABOO_TAG:-$version}"
+image="${PEEKABOO_REGISTRY%/}/peekaboo:${tag}"
+docker build \
+  --build-arg APP_VERSION="$version" \
+  --build-arg APP_REVISION="$(git rev-parse --short HEAD)" \
+  --tag "$image" .
 echo "Built $image"
 '''
 
@@ -83,8 +88,14 @@ description = "Push the container image to PEEKABOO_REGISTRY"
 depends = ["docker:build"]
 run = '''
 : "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
-image="${PEEKABOO_REGISTRY%/}/peekaboo:${PEEKABOO_TAG:-latest}"
+version="$(tr -d '[:space:]' < VERSION)"
+tag="${PEEKABOO_TAG:-$version}"
+image="${PEEKABOO_REGISTRY%/}/peekaboo:${tag}"
 docker push "$image"
 echo "Published $image"
 '''
+
+[tasks.release]
+description = "Create the release tag for the version in VERSION"
+run = "./scripts/release.sh"
 

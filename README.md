@@ -175,6 +175,8 @@ volume to start over.
 
 ### Using a published image
 
+Release images use the version from `VERSION` as their tag, so pin that exact tag:
+
 ```bash
 # .env
 PEEKABOO_IMAGE=registry.example.com/peekaboo:0.1.0
@@ -391,8 +393,9 @@ Useful tasks:
 | `mise run lint` | ESLint, svelte-check, and e2e type-check. |
 | `mise run e2e` | Full Playwright suite with synthetic authenticated RTSP feeds. |
 | `mise run test` | Backend tests, then e2e. |
-| `mise run docker:build` | Build the image tagged for `PEEKABOO_REGISTRY`. |
+| `mise run docker:build` | Build the image tagged with `VERSION` for `PEEKABOO_REGISTRY`. |
 | `mise run docker:publish` | Push that image. |
+| `mise run release` | Create the `v<version>` release tag from `VERSION`. |
 
 ### Optional Hikvision SDK
 
@@ -456,16 +459,22 @@ in CI on GitHub-hosted Ubuntu with Google Chrome.
 
 Docker builds and pushes are intentionally local; CI only tests.
 
+Images are tagged with the contents of `VERSION` by default and carry OCI labels for
+the version and short Git revision.
+
 ```bash
 cp mise.local.example.toml mise.local.toml
-# set PEEKABOO_REGISTRY and PEEKABOO_TAG in mise.local.toml (gitignored)
+# set PEEKABOO_REGISTRY in mise.local.toml (gitignored)
 
 docker login registry.example.com
-mise run docker:publish
+mise run docker:publish   # registry.example.com/peekaboo:0.1.0
 ```
 
-Registry credentials stay in Docker's credential store. The registry URL and tag
-stay in `mise.local.toml`, which is gitignored.
+Set `PEEKABOO_TAG` only when you deliberately want a different tag. See
+[docs/releasing.md](docs/releasing.md) for the release process and version policy.
+
+Registry credentials stay in Docker's credential store. The registry URL and any
+tag override stay in `mise.local.toml`, which is gitignored.
 
 ## Security
 

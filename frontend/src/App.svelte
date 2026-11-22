@@ -58,62 +58,69 @@
   }
 </script>
 
-{#if auth.loading}
-  <div class="boot-screen">
-    <span class="spinner" aria-hidden="true"></span>
-    <p>Loading Peekaboo…</p>
-  </div>
-{:else if !auth.user}
-  <LoginView />
-{:else}
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand" href="#/feeds">
-        <span class="brand-dot" aria-hidden="true"></span>
-        Peekaboo
-      </a>
+<div class="app-frame">
+  {#if auth.loading}
+    <div class="boot-screen">
+      <span class="spinner" aria-hidden="true"></span>
+      <p>Loading Peekaboo…</p>
+    </div>
+  {:else if !auth.user}
+    <LoginView />
+  {:else}
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="#/feeds">
+          <span class="brand-dot" aria-hidden="true"></span>
+          Peekaboo
+        </a>
 
-      <nav class="main-nav" aria-label="Main navigation">
-        <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
-        <a href="#/playback" class:active={route === 'playback'}>Playback</a>
-        <a href="#/alarms" class:active={route === 'alarms'}>Alarms</a>
-        <a href="#/config" class:active={route === 'config'}>NVRs</a>
-        {#if auth.user.isAdmin}
-          <a href="#/users" class:active={route === 'users'}>Users</a>
+        <nav class="main-nav" aria-label="Main navigation">
+          <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
+          <a href="#/playback" class:active={route === 'playback'}>Playback</a>
+          <a href="#/alarms" class:active={route === 'alarms'}>Alarms</a>
+          <a href="#/config" class:active={route === 'config'}>NVRs</a>
+          {#if auth.user.isAdmin}
+            <a href="#/users" class:active={route === 'users'}>Users</a>
+          {/if}
+          <a href="#/account" class:active={route === 'account'}>Account</a>
+        </nav>
+
+        <div class="topbar-user">
+          <span class="username">{auth.user.username}</span>
+          <button class="button ghost small" onclick={logout} disabled={loggingOut}>
+            {loggingOut ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        {#if route === 'users' && auth.user.isAdmin}
+          <UsersView />
+        {:else if route === 'playback'}
+          {#key `${playbackParams.cameraId}|${playbackParams.start}|${playbackParams.end}|${playbackParams.at}|${playbackParams.autoplay}`}
+            <PlaybackView
+              initialCameraId={playbackParams.cameraId}
+              initialStart={playbackParams.start}
+              initialEnd={playbackParams.end}
+              initialAt={playbackParams.at}
+              initialAutoplay={playbackParams.autoplay}
+            />
+          {/key}
+        {:else if route === 'alarms'}
+          <AlarmsView />
+        {:else if route === 'config'}
+          <ConfigView />
+        {:else if route === 'account'}
+          <AccountView />
+        {:else}
+          <FeedsView />
         {/if}
-        <a href="#/account" class:active={route === 'account'}>Account</a>
-      </nav>
+      </main>
+    </div>
+  {/if}
 
-      <div class="topbar-user">
-        <span class="username">{auth.user.username}</span>
-        <button class="button ghost small" onclick={logout} disabled={loggingOut}>
-          {loggingOut ? 'Signing out…' : 'Sign out'}
-        </button>
-      </div>
-    </header>
-
-    <main class="content">
-      {#if route === 'users' && auth.user.isAdmin}
-        <UsersView />
-      {:else if route === 'playback'}
-        {#key `${playbackParams.cameraId}|${playbackParams.start}|${playbackParams.end}|${playbackParams.at}|${playbackParams.autoplay}`}
-          <PlaybackView
-            initialCameraId={playbackParams.cameraId}
-            initialStart={playbackParams.start}
-            initialEnd={playbackParams.end}
-            initialAt={playbackParams.at}
-            initialAutoplay={playbackParams.autoplay}
-          />
-        {/key}
-      {:else if route === 'alarms'}
-        <AlarmsView />
-      {:else if route === 'config'}
-        <ConfigView />
-      {:else if route === 'account'}
-        <AccountView />
-      {:else}
-        <FeedsView />
-      {/if}
-    </main>
-  </div>
-{/if}
+  <footer class="app-footer">
+    <span>Peekaboo</span>
+    <span class="app-version">v{__APP_VERSION__}</span>
+  </footer>
+</div>

@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <!-- VERSION is the single source of truth for the release version. -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

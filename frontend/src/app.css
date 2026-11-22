@@ -91,10 +91,31 @@ code {
 
 /* Shell ------------------------------------------------------------------ */
 
-.shell {
+.app-frame {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem clamp(1rem, 4vw, 2.5rem);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.app-version {
+  font-variant-numeric: tabular-nums;
 }
 
 .topbar {
@@ -821,7 +842,7 @@ input[type='checkbox'] {
 /* Login ------------------------------------------------------------------ */
 
 .login-screen {
-  min-height: 100vh;
+  flex: 1;
   display: grid;
   place-items: center;
   padding: 1.5rem;
@@ -858,7 +879,7 @@ input[type='checkbox'] {
 /* Feedback --------------------------------------------------------------- */
 
 .boot-screen {
-  min-height: 100vh;
+  flex: 1;
   display: grid;
   place-content: center;
   justify-items: center;

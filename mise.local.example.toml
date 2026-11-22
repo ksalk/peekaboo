@@ -3,4 +3,5 @@
 
 [env]
 PEEKABOO_REGISTRY = "registry.example.com"
-PEEKABOO_TAG = "0.1.0"
+# Optional. Images default to the version in VERSION.
+# PEEKABOO_TAG = "latest"

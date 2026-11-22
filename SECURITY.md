@@ -71,8 +71,8 @@ hardening:
 - **Playback URLs reveal the NVR host to authenticated users.** The URLs are
   credential-free, but they contain the configured RTSP host and port. All users who
   can open Playback can already see NVR addresses under **NVRs**.
-- **The health endpoint is unauthenticated.** It returns only `{"status":"ok"}` and
-  is intended for container orchestration checks.
+- **The health endpoint is unauthenticated.** It returns the status and the running
+  application version, and is intended for container orchestration checks.
 - **Users may add arbitrary NVR addresses.** This is inherent to a viewer configured
   by authenticated users. Addresses are host-only and reject embedded credentials, but
   they can still point at internal hosts. Do not give accounts to untrusted people.

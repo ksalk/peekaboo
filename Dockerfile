@@ -1,18 +1,23 @@
 # syntax=docker/dockerfile:1
 
+ARG APP_VERSION=dev
+ARG APP_REVISION=unknown
+
 FROM node:26.12.1-alpine AS frontend
 WORKDIR /src/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
+# vite.config.ts reads ../VERSION so the footer and the API build share one version.
+COPY VERSION /src/VERSION
 COPY frontend/ ./
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.101 AS backend
 WORKDIR /src
 
-COPY global.json Directory.Build.props ./
+COPY VERSION global.json Directory.Build.props ./
 COPY backend/Peekaboo.Api/Peekaboo.Api.csproj backend/Peekaboo.Api/
 RUN dotnet restore backend/Peekaboo.Api/Peekaboo.Api.csproj
 
@@ -24,6 +29,16 @@ RUN dotnet publish backend/Peekaboo.Api/Peekaboo.Api.csproj \
     --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.15 AS runtime-base
+
+ARG APP_VERSION
+ARG APP_REVISION
+LABEL org.opencontainers.image.title="Peekaboo" \
+      org.opencontainers.image.description="Self-hosted Hikvision NVR viewer" \
+      org.opencontainers.image.version="$APP_VERSION" \
+      org.opencontainers.image.revision="$APP_REVISION" \
+      org.opencontainers.image.source="https://github.com/ksalk/peekaboo" \
+      org.opencontainers.image.licenses="MIT"
+
 WORKDIR /app
 
 RUN apt-get update \

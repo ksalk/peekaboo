@@ -41,6 +41,13 @@ and Chrome/Chromium with H.264 support, and uses ports 8555, 5080 and 5173.
 - Keep commits focused and use one-line messages in the existing style
   (`feat: ...`, `fix: ...`, `test: ...`, `docs: ...`).
 
+## Releasing
+
+`VERSION` at the repository root is the single source of truth for the application
+version. To cut a release, update `VERSION` and `CHANGELOG.md`, commit them, and run
+`mise run release`. See [docs/releasing.md](docs/releasing.md) for the full checklist
+and the version policy.
+
 ## Reporting security issues
 
 See [SECURITY.md](SECURITY.md). Do not open a public issue for a vulnerability.
