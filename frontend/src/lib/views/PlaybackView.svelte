@@ -1,13 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { SvelteMap } from 'svelte/reactivity';
   import { api, errorMessage } from '../api';
   import DateTimeField from '../components/DateTimeField.svelte';
   import PlaybackTimeline from '../components/PlaybackTimeline.svelte';
+  import SearchStatus from '../components/SearchStatus.svelte';
   import {
-    dayKey,
     formatDate,
-    formatDayLabel,
     formatTime,
     parseLocalDateTimeInput,
     quickRange,
@@ -15,7 +13,7 @@
     toLocalDateTimeInput,
     type QuickRangeName,
   } from '../date-time';
-  import { formatDuration, segmentsOverlap } from '../playback-utils';
+  import { formatDuration } from '../playback-utils';
   import { StreamPlayer } from '../stream-player';
   import type {
     AlarmRange,
@@ -26,12 +24,27 @@
 
   type PlayerStatus = 'idle' | 'connecting' | 'playing' | 'ended' | 'error';
 
+  let {
+    initialCameraId = null,
+    initialStart = null,
+    initialEnd = null,
+    initialAt = null,
+    initialAutoplay = false,
+  }: {
+    initialCameraId?: string | null;
+    initialStart?: string | null;
+    initialEnd?: string | null;
+    initialAt?: string | null;
+    initialAutoplay?: boolean;
+  } = $props();
+
   const CAMERA_KEY = 'peekaboo.playback.camera';
   const initialRange = quickRange('today');
 
   let cameras = $state<Camera[]>([]);
   let camerasLoading = $state(true);
   let loadError = $state<string | null>(null);
+  let loadNotice = $state<string | null>(null);
   let cameraId = $state('');
   let from = $state(toLocalDateTimeInput(initialRange.from));
   let to = $state(toLocalDateTimeInput(initialRange.to));
@@ -47,7 +60,7 @@
   let playerStatus = $state<PlayerStatus>('idle');
   let playerError = $state('');
   let jumpOffset = $state(0);
-  let copyState = $state<{ key: string; status: 'copied' | 'failed' } | null>(null);
+  let copyState = $state<'copied' | 'failed' | null>(null);
   let videoElement = $state<HTMLVideoElement>();
   let playerCard = $state<HTMLElement>();
   let cameraSelect = $state<HTMLSelectElement>();
@@ -55,9 +68,10 @@
   let searchController: AbortController | null = null;
   let copyTimer: number | null = null;
   let playRequest = 0;
+  let autoPlayAttempted = false;
+  let pendingAutoPlayAt: Date | null = null;
 
   const canSearch = $derived(!searching && cameraId !== '' && !camerasLoading);
-  const groups = $derived(groupRecordings(result?.recordings ?? []));
   const totalDuration = $derived(
     (result?.recordings ?? []).reduce(
       (sum, segment) => sum + segment.durationSeconds,
@@ -97,18 +111,116 @@
   async function loadCameras() {
     camerasLoading = true;
     loadError = null;
+    let runInitialSearch = false;
 
     try {
       cameras = await api.listCameras();
       const stored = readStoredCamera();
-      cameraId = cameras.some((camera) => camera.id === stored)
-        ? stored!
-        : (cameras[0]?.id ?? '');
+      const requested =
+        initialCameraId && cameras.some((camera) => camera.id === initialCameraId)
+          ? initialCameraId
+          : null;
+
+      if (initialCameraId && !requested) {
+        loadNotice = 'The camera from the link was not found. Choose a camera and search again.';
+      }
+
+      cameraId =
+        requested ??
+        (cameras.some((camera) => camera.id === stored)
+          ? stored!
+          : (cameras[0]?.id ?? ''));
+
+      if (requested) {
+        storeCamera(requested);
+      }
+
+      const range = parseInitialRange(initialStart, initialEnd);
+      if (range) {
+        from = toLocalDateTimeInput(range.start);
+        to = toLocalDateTimeInput(range.end);
+
+        if (requested) {
+          runInitialSearch = true;
+
+          if (initialAutoplay) {
+            const at = initialAt ? new Date(initialAt) : range.start;
+            pendingAutoPlayAt = Number.isNaN(at.getTime()) ? range.start : at;
+          }
+        }
+      }
     } catch (cause) {
       loadError = errorMessage(cause);
     } finally {
       camerasLoading = false;
     }
+
+    if (runInitialSearch) {
+      await search();
+      tryAutoPlay();
+    }
+  }
+
+  function parseInitialRange(
+    startValue: string | null,
+    endValue: string | null,
+  ): { start: Date; end: Date } | null {
+    if (!startValue || !endValue) {
+      return null;
+    }
+
+    const start = new Date(startValue);
+    let end = new Date(endValue);
+
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      end.getTime() <= start.getTime()
+    ) {
+      loadNotice = 'The playback link had an invalid time range.';
+      return null;
+    }
+
+    const maximumMs = 31 * 24 * 60 * 60 * 1000;
+    if (end.getTime() - start.getTime() > maximumMs) {
+      end = new Date(start.getTime() + maximumMs - 1000);
+      loadNotice = 'The linked playback range was longer than 31 days; showing 31 days.';
+    }
+
+    return { start, end };
+  }
+
+  function tryAutoPlay() {
+    if (autoPlayAttempted || !result || !pendingAutoPlayAt) {
+      return;
+    }
+
+    autoPlayAttempted = true;
+    const at = pendingAutoPlayAt.getTime();
+    const segments = result.recordings;
+    const target =
+      segments.find((segment) => {
+        const start = new Date(segment.start).getTime();
+        const end = new Date(segment.end).getTime();
+        return start <= at && end > at;
+      }) ??
+      segments.find((segment) => new Date(segment.start).getTime() >= at) ??
+      null;
+
+    if (!target) {
+      loadNotice = 'No recording covers the linked alarm time; showing the timeline instead.';
+      return;
+    }
+
+    const targetStart = new Date(target.start).getTime();
+    const start = Math.max(targetStart, at - 5000);
+    const end = new Date(target.end).getTime();
+    const adjusted = effectiveSegment({
+      ...target,
+      start: new Date(start).toISOString(),
+      durationSeconds: Math.max(0, Math.round((end - start) / 1000)),
+    });
+    void play(adjusted);
   }
 
   function readStoredCamera(): string | null {
@@ -195,6 +307,7 @@
       return;
     }
 
+    loadNotice = null;
     stopPlayback();
     result = null;
     motionRanges = [];
@@ -303,6 +416,7 @@
 
     const effective = effectiveSegment(segment);
     stopPlayback();
+    copyState = null;
     const request = ++playRequest;
     selectedSegment = effective;
     jumpOffset = 0;
@@ -351,6 +465,7 @@
     selectedSegment = null;
     playerStatus = 'idle';
     playerError = '';
+    copyState = null;
   }
 
   function closePlayer() {
@@ -358,14 +473,16 @@
     cameraSelect?.focus();
   }
 
-  async function copyUrl(segment: RecordingSegment) {
-    const key = segmentKey(segment);
+  async function copyUrl() {
+    if (!selectedSegment?.playbackUrl) {
+      return;
+    }
 
     try {
-      await writeClipboard(segment.playbackUrl);
-      showCopyState(key, 'copied');
+      await writeClipboard(selectedSegment.playbackUrl);
+      showCopyState('copied');
     } catch {
-      showCopyState(key, 'failed');
+      showCopyState('failed');
     }
   }
 
@@ -398,8 +515,8 @@
     }
   }
 
-  function showCopyState(key: string, status: 'copied' | 'failed') {
-    copyState = { key, status };
+  function showCopyState(status: 'copied' | 'failed') {
+    copyState = status;
 
     if (copyTimer !== null) {
       window.clearTimeout(copyTimer);
@@ -409,14 +526,6 @@
       copyState = null;
       copyTimer = null;
     }, 2000);
-  }
-
-  function segmentKey(segment: RecordingSegment): string {
-    return `${segment.start}|${segment.end}`;
-  }
-
-  function isSelected(segment: RecordingSegment): boolean {
-    return selectedSegment !== null && segmentsOverlap(segment, selectedSegment);
   }
 
   function jumpToOffset() {
@@ -444,27 +553,6 @@
     void play(adjusted);
   }
 
-  function groupRecordings(
-    recordings: RecordingSegment[],
-  ): { key: string; label: string; items: RecordingSegment[] }[] {
-    const grouped = new SvelteMap<string, RecordingSegment[]>();
-
-    for (const segment of recordings) {
-      const key = dayKey(segment.start);
-      const items = grouped.get(key);
-      if (items) {
-        items.push(segment);
-      } else {
-        grouped.set(key, [segment]);
-      }
-    }
-
-    return [...grouped.entries()].map(([key, items]) => ({
-      key,
-      label: formatDayLabel(items[0]!.start),
-      items,
-    }));
-  }
 </script>
 
 <section class="page">
@@ -477,6 +565,10 @@
 
   {#if loadError}
     <div class="alert" role="alert">{loadError}</div>
+  {/if}
+
+  {#if loadNotice}
+    <div class="alert" role="status">{loadNotice}</div>
   {/if}
 
   {#if camerasLoading}
@@ -544,6 +636,13 @@
       </div>
     {/if}
 
+    {#if searching}
+      <SearchStatus
+        label="Searching recordings…"
+        detail="Looking up recording coverage and motion events."
+      />
+    {/if}
+
     {#if selectedSegment}
       <article class="card playback-player" bind:this={playerCard} tabindex="-1">
         <header class="playback-player-header">
@@ -556,6 +655,15 @@
           </div>
 
           <div class="actions">
+            {#if selectedSegment.playbackUrl}
+              <button class="button small" type="button" onclick={() => void copyUrl()}>
+                {copyState === 'copied'
+                  ? 'Copied'
+                  : copyState === 'failed'
+                    ? 'Copy failed'
+                    : 'Copy stream URL'}
+              </button>
+            {/if}
             {#if playerStatus === 'ended'}
               <button
                 class="button small"
@@ -668,6 +776,11 @@
         onPlay={(segment) => void play(segment)}
       />
 
+      <p class="hint">
+        Hover or focus a recording on the timeline for its time range, duration, and
+        codec. Click it to play.
+      </p>
+
       {#if result && result.recordings.length === 0}
         <div class="empty-state">
           <h2>No recordings found</h2>
@@ -677,57 +790,6 @@
               : 'Try another date or a wider time range.'}
           </p>
         </div>
-      {/if}
-
-      {#if result && result.recordings.length > 0}
-        {#each groups as group (group.key)}
-          <section class="recording-group">
-            <h2>{group.label}</h2>
-
-            <div class="recording-list">
-              {#each group.items as segment (segmentKey(segment))}
-                {@const active = isSelected(segment)}
-                {@const busy =
-                  active && (playerStatus === 'connecting' || playerStatus === 'playing')}
-                <article class="recording-row" class:active>
-                  <div class="recording-time">
-                    <strong>{formatTime(segment.start)} – {formatTime(segment.end)}</strong>
-                    <span class="muted">{formatDuration(segment.durationSeconds)}</span>
-                  </div>
-
-                  <div class="recording-meta">
-                    <span class="badge accent">{segment.codecType ?? 'video'}</span>
-                    {#if segment.playbackUrl}
-                      <code class="url" title={segment.playbackUrl}>{segment.playbackUrl}</code>
-                    {:else}
-                      <span class="badge">SDK stream</span>
-                      <span class="muted">plays through Peekaboo; no shareable URL</span>
-                    {/if}
-                  </div>
-
-                  <div class="recording-actions">
-                    {#if segment.playbackUrl}
-                      <button class="button small" onclick={() => void copyUrl(segment)}>
-                        {copyState?.key === segmentKey(segment)
-                          ? copyState.status === 'copied'
-                            ? 'Copied'
-                            : 'Copy failed'
-                          : 'Copy URL'}
-                      </button>
-                    {/if}
-                    <button
-                      class="button small primary"
-                      disabled={busy}
-                      onclick={() => void play(segment)}
-                    >
-                      {busy ? 'Playing…' : active ? 'Play again' : 'Play'}
-                    </button>
-                  </div>
-                </article>
-              {/each}
-            </div>
-          </section>
-        {/each}
       {/if}
     {/if}
   {/if}

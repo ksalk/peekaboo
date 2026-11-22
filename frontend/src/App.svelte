@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { auth } from './lib/auth.svelte';
+  import { readPlaybackParams } from './lib/playback-links';
   import LoginView from './lib/views/LoginView.svelte';
   import FeedsView from './lib/views/FeedsView.svelte';
   import PlaybackView from './lib/views/PlaybackView.svelte';
@@ -11,14 +12,19 @@
 
   type Route = 'feeds' | 'playback' | 'alarms' | 'config' | 'users' | 'account';
 
+  function readPath(): string {
+    return window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? '';
+  }
+
   function readRoute(): Route {
-    const value = window.location.hash.replace(/^#\/?/, '');
+    const value = readPath();
     return value === 'playback' || value === 'alarms' || value === 'config' || value === 'users' || value === 'account'
       ? value
       : 'feeds';
   }
 
   let route = $state<Route>(readRoute());
+  let playbackParams = $state(readPlaybackParams(window.location.hash));
   let loggingOut = $state(false);
 
   onMount(() => {
@@ -26,6 +32,7 @@
 
     const updateRoute = () => {
       route = readRoute();
+      playbackParams = readPlaybackParams(window.location.hash);
     };
 
     window.addEventListener('hashchange', updateRoute);
@@ -89,7 +96,15 @@
       {#if route === 'users' && auth.user.isAdmin}
         <UsersView />
       {:else if route === 'playback'}
-        <PlaybackView />
+        {#key `${playbackParams.cameraId}|${playbackParams.start}|${playbackParams.end}|${playbackParams.at}|${playbackParams.autoplay}`}
+          <PlaybackView
+            initialCameraId={playbackParams.cameraId}
+            initialStart={playbackParams.start}
+            initialEnd={playbackParams.end}
+            initialAt={playbackParams.at}
+            initialAutoplay={playbackParams.autoplay}
+          />
+        {/key}
       {:else if route === 'alarms'}
         <AlarmsView />
       {:else if route === 'config'}

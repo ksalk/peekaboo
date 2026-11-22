@@ -35,8 +35,7 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   await page.getByLabel('To', { exact: true }).fill(`${dayPrefix} 23:59:59`);
   await page.getByRole('button', { name: 'Search recordings' }).click();
 
-  const rows = page.locator('.recording-row');
-  await expect(rows).toHaveCount(2);
+  await expect(page.locator('.recording-row')).toHaveCount(0);
 
   const timeline = page.locator('.playback-timeline');
   await expect(timeline).toBeVisible();
@@ -47,24 +46,15 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
     /Play recording from/,
   );
 
-  const row = rows.first();
-  await expect(row).toBeVisible();
-
-  const playbackUrl = await row.locator('.url').innerText();
-  expect(playbackUrl).toMatch(
-    /^rtsp:\/\/127\.0\.0\.1:8555\/ISAPI\/Streaming\/tracks\/101\?starttime=\d{8}T\d{6}Z&endtime=\d{8}T\d{6}Z$/,
-  );
-  expect(playbackUrl).not.toContain('campassword');
-
-  await row.getByRole('button', { name: 'Copy URL' }).click();
-  await expect(row.getByRole('button', { name: 'Copied' })).toBeVisible();
-
-  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clipboard).toBe(playbackUrl);
-  expect(clipboard).not.toContain('campassword');
+  await timelineSegments.first().hover();
+  const tooltip = page.locator('.floating-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('H.264-BP');
+  await expect(tooltip).toContainText('Click to play');
+  await expect(tooltip).toContainText(/\d{2}-\d{2}-\d{4}/);
 
   await expectConsumerCount(feeds.playback.path, 0);
-  await row.getByRole('button', { name: 'Play', exact: true }).click();
+  await timelineSegments.first().click();
 
   await expect
     .poll(
@@ -79,6 +69,15 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   await expectConsumerCount(feeds.playback.path, 1);
   await expect(page.locator('.playback-video')).toHaveJSProperty('controls', true);
   await expect(page.locator('.playback-jump')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Copy stream URL' }).click();
+  await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
+
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toMatch(
+    /^rtsp:\/\/127\.0\.0\.1:8555\/ISAPI\/Streaming\/tracks\/101\?starttime=\d{8}T\d{6}Z&endtime=\d{8}T\d{6}Z$/,
+  );
+  expect(clipboard).not.toContain('campassword');
 
   const playerHeader = page.locator('.playback-player-header p');
   const beforeJumpHeader = await playerHeader.innerText();
@@ -188,6 +187,54 @@ test('plays from the recording coverage timeline', async ({ page, request }) => 
   await expectConsumerCount(feeds.playback.path, 0);
 });
 
+test('zooms and drags the recording timeline without starting playback', async ({
+  page,
+  request,
+}) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Timeline zoom'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openPlayback(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+  await expect(page.locator('.playback-timeline-segment')).toHaveCount(2);
+
+  const scroll = page.locator('.playback-timeline-scroll');
+  const body = page.locator('.playback-timeline-body');
+  const widthBefore = await body.evaluate((element) => element.getBoundingClientRect().width);
+
+  await page.getByRole('button', { name: 'Zoom in timeline' }).click();
+  await expect(body).toHaveAttribute('style', /width:\s*200%/);
+  const widthAfter = await body.evaluate((element) => element.getBoundingClientRect().width);
+  expect(widthAfter).toBeGreaterThan(widthBefore);
+
+  const beforeScroll = await scroll.evaluate((element) => element.scrollLeft);
+  expect(beforeScroll).toBeGreaterThanOrEqual(0);
+  await scroll.evaluate((element) => {
+    element.scrollLeft = 0;
+  });
+
+  const segment = page.locator('.playback-timeline-segment').first();
+  const box = await segment.boundingBox();
+  expect(box).not.toBeNull();
+
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2 - 120, box!.y + box!.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+
+  await expect
+    .poll(() => scroll.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  await expect(page.locator('.playback-video')).toHaveCount(0);
+});
+
 test('stops playback on navigation and remembers the selected camera', async ({
   page,
   request,
@@ -203,9 +250,9 @@ test('stops playback on navigation and remembers the selected camera', async ({
   await page.getByLabel('Camera').selectOption(camera.id);
   await page.getByRole('button', { name: 'Search recordings' }).click();
 
-  const row = page.locator('.recording-row').first();
-  await expect(row).toBeVisible();
-  await row.getByRole('button', { name: 'Play', exact: true }).click();
+  const segment = page.locator('.playback-timeline-segment').first();
+  await expect(segment).toBeVisible();
+  await segment.click();
   await expectConsumerCount(feeds.playback.path, 1);
 
   await page.getByRole('link', { name: 'Feeds', exact: true }).click();
