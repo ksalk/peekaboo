@@ -28,8 +28,13 @@
   let result = $state<AlarmSearchResult | null>(null);
   let controller: AbortController | null = null;
   let destroyed = false;
+  let searchedFrom = $state('');
+  let searchedTo = $state('');
 
   const canSearch = $derived(!loading && !camerasLoading);
+  const filtersDirty = $derived(
+    result !== null && (from !== searchedFrom || to !== searchedTo),
+  );
   const totalDuration = $derived(
     (result?.ranges ?? []).reduce(
       (sum, range) => sum + range.durationSeconds,
@@ -97,6 +102,8 @@
       return;
     }
 
+    searchedFrom = from;
+    searchedTo = to;
     controller?.abort();
     const request = new AbortController();
     controller = request;
@@ -130,7 +137,7 @@
     const range = quickRange(name);
     from = toLocalDateTimeInput(range.from);
     to = toLocalDateTimeInput(range.to);
-    resetResults();
+    error = null;
   }
 
   function openInPlayback(range: AlarmRange) {
@@ -206,14 +213,14 @@
       <DateTimeField
         label="From"
         bind:value={from}
-        onchange={resetResults}
+        onchange={() => (error = null)}
         required
       />
 
       <DateTimeField
         label="To"
         bind:value={to}
-        onchange={resetResults}
+        onchange={() => (error = null)}
         required
       />
 
@@ -232,6 +239,13 @@
         </button>
       </div>
     </form>
+
+    {#if filtersDirty}
+      <p class="hint">
+        The time range changed. Search again to apply it; the current results are
+        from the previous search.
+      </p>
+    {/if}
 
     {#if error}
       <div class="alert" role="alert">{error}</div>

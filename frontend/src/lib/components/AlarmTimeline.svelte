@@ -30,6 +30,7 @@
     dayEndMs: number;
     count: number;
     cameras: CameraLane[];
+    ranges: AlarmRange[];
   };
 
   type TooltipState = {
@@ -69,6 +70,7 @@
           { label: string; bars: AlarmBar[] }
         >;
         count: number;
+        ranges: AlarmRange[];
       }
     >();
 
@@ -99,9 +101,12 @@
               dayStartMs: dayStart,
               cameras: new SvelteMap(),
               count: 0,
+              ranges: [],
             };
             days.set(key, day);
           }
+
+          day.ranges.push(range);
 
           const cameraKey = `${range.nvrId}|${range.cameraId}`;
           let camera = day.cameras.get(cameraKey);
@@ -127,7 +132,6 @@
             endMs: visibleEnd,
             className: barClass(range),
           });
-          day.count += 1;
         }
 
         dayStart = dayEnd;
@@ -141,7 +145,7 @@
         label: formatDate(day.dayStartMs),
         dayStartMs: day.dayStartMs,
         dayEndMs: startOfNextDay(day.dayStartMs),
-        count: day.count,
+        count: day.ranges.length,
         cameras: [...day.cameras.entries()]
           .map(([key, camera]) => ({
             key,
@@ -149,6 +153,10 @@
             lanes: assignLanes(camera.bars),
           }))
           .sort((left, right) => left.label.localeCompare(right.label)),
+        ranges: [...day.ranges].sort(
+          (left, right) =>
+            new Date(left.start).getTime() - new Date(right.start).getTime(),
+        ),
       }));
   }
 
@@ -184,6 +192,18 @@
 
   function barClass(range: AlarmRange): string {
     return `alarm-bar-${range.target}`;
+  }
+
+  function targetClass(target: AlarmTarget): string {
+    return `alarm-target-${target}`;
+  }
+
+  function tableTime(range: AlarmRange): string {
+    const start = new Date(range.start);
+    const end = new Date(range.end);
+    return start.toDateString() === end.toDateString()
+      ? `${formatTime(start)} – ${formatTime(end)}`
+      : formatDateRange(range.start, range.end);
   }
 
   function targetLabel(target: AlarmTarget): string {
@@ -334,6 +354,60 @@
           {tick.toString().padStart(2, '0')}:00
         </span>
       {/each}
+    </div>
+
+    <div class="alarm-day-entries">
+      <table class="alarm-table">
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            <th scope="col">Alarm</th>
+            <th scope="col">Camera</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Play</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each day.ranges as range, rangeIndex (`${range.cameraId}|${range.channelId}|${range.target}|${range.start}|${range.end}|${rangeIndex}`)}
+            <tr>
+              <td class="alarm-table-time">
+                {tableTime(range)}
+                {#if range.inferredStart || range.inferredEnd}
+                  <span class="alarm-table-badges">
+                    {#if range.inferredStart}<span class="badge">est. start</span>{/if}
+                    {#if range.inferredEnd}<span class="badge">est. end</span>{/if}
+                  </span>
+                {/if}
+              </td>
+              <td>
+                <span class={`alarm-table-target ${targetClass(range.target)}`}>
+                  {displayTarget(range)}
+                </span>
+              </td>
+              <td>
+                <div class="alarm-table-camera">
+                  <span>{range.cameraName}</span>
+                  <span class="alarm-table-nvr">
+                    {range.nvrName} · ch {range.channelId}
+                  </span>
+                </div>
+              </td>
+              <td class="alarm-table-duration">
+                {formatDuration(range.durationSeconds)}
+              </td>
+              <td class="alarm-table-action">
+                <button
+                  class="button small primary"
+                  type="button"
+                  onclick={() => onOpen(range)}
+                >
+                  Play
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   </section>
 {/each}

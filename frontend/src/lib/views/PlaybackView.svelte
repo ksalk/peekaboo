@@ -70,6 +70,8 @@
   let playRequest = 0;
   let autoPlayAttempted = false;
   let pendingAutoPlayAt: Date | null = null;
+  let searchedFrom = $state('');
+  let searchedTo = $state('');
   let hiddenResume = $state<{
     cameraId: string;
     segment: RecordingSegment;
@@ -77,6 +79,10 @@
   } | null>(null);
 
   const canSearch = $derived(!searching && cameraId !== '' && !camerasLoading);
+  const filtersDirty = $derived(
+    (result !== null || motionWindow !== null) &&
+      (from !== searchedFrom || to !== searchedTo),
+  );
   const totalDuration = $derived(
     (result?.recordings ?? []).reduce(
       (sum, segment) => sum + segment.durationSeconds,
@@ -335,7 +341,8 @@
     const range = quickRange(name);
     from = toLocalDateTimeInput(range.from);
     to = toLocalDateTimeInput(range.to);
-    resetResults();
+    searchError = null;
+    loadNotice = null;
   }
 
   async function search() {
@@ -364,6 +371,8 @@
       return;
     }
 
+    searchedFrom = from;
+    searchedTo = to;
     loadNotice = null;
     hiddenResume = null;
     stopPlayback();
@@ -659,14 +668,20 @@
       <DateTimeField
         label="From"
         bind:value={from}
-        onchange={resetResults}
+        onchange={() => {
+          searchError = null;
+          loadNotice = null;
+        }}
         required
       />
 
       <DateTimeField
         label="To"
         bind:value={to}
-        onchange={resetResults}
+        onchange={() => {
+          searchError = null;
+          loadNotice = null;
+        }}
         required
       />
 
@@ -685,6 +700,13 @@
         </button>
       </div>
     </form>
+
+    {#if filtersDirty}
+      <p class="hint">
+        The time range changed. Search again to apply it; the current results are
+        from the previous search.
+      </p>
+    {/if}
 
     {#if searchError}
       <div class="alert" role="alert">{searchError}</div>

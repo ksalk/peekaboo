@@ -49,6 +49,12 @@ test('shows NVR motion alarms on the Alarms page and playback timeline', async (
   await expect(page.locator('.alarm-day')).toHaveCount(1);
   await expect(page.locator('.alarm-summary')).toContainText('2 motion ranges');
 
+  const table = page.locator('.alarm-table').first();
+  await expect(table.locator('tbody tr')).toHaveCount(2);
+  await expect(table).toContainText(camera.name);
+  await expect(table.locator('tbody tr').first()).toContainText('Person');
+  await expect(table.getByRole('button', { name: 'Play', exact: true })).toHaveCount(2);
+
   await page.locator('.alarm-bar').first().hover();
   const tooltip = page.locator('.floating-tooltip');
   await expect(tooltip).toBeVisible();
@@ -136,6 +142,32 @@ test('validates filters and clears stale alarm results', async ({ page, request 
   ).toBeVisible();
 });
 
+test('keeps alarm results when the quick range changes', async ({ page, request }) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Alarm range retention'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openAlarms(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search alarms' }).click();
+  await expect(page.locator('.alarm-bar')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Yesterday' }).click();
+
+  await expect(page.locator('.alarm-bar')).toHaveCount(2);
+  await expect(page.getByText('Search again to apply it')).toBeVisible();
+  await expect(page.getByLabel('From', { exact: true })).toHaveValue(
+    /^\d{2}-\d{2}-\d{4} 00:00:00$/,
+  );
+
+  await page.getByRole('button', { name: 'Search alarms' }).click();
+  await expect(page.locator('.alarm-bar')).toHaveCount(2);
+  await expect(page.getByText('Search again to apply it')).toHaveCount(0);
+});
+
 test('opens an alarm from its tooltip in playback', async ({ page, request }) => {
   const camera = await createCameraFixture(
     request,
@@ -172,7 +204,7 @@ test('opens an alarm from its tooltip in playback', async ({ page, request }) =>
   await expectConsumerCount(feeds.playback.path, 1);
 });
 
-test('opens an alarm tooltip link from the keyboard', async ({ page, request }) => {
+test('opens an alarm from the table with the keyboard', async ({ page, request }) => {
   const camera = await createCameraFixture(
     request,
     uniqueName('Alarm keyboard'),
@@ -183,18 +215,15 @@ test('opens an alarm tooltip link from the keyboard', async ({ page, request }) 
   await openAlarms(page);
   await page.getByLabel('Camera').selectOption(camera.id);
   await page.getByRole('button', { name: 'Search alarms' }).click();
-  await expect(page.locator('.alarm-bar')).toHaveCount(2);
+  await expect(page.locator('.alarm-table tbody tr')).toHaveCount(2);
 
-  const secondBar = page.locator('.alarm-bar').nth(1);
-  await secondBar.focus();
-  await expect(page.locator('.floating-tooltip')).toBeVisible();
-
-  await page.keyboard.press('Tab');
-  const link = page.getByRole('link', { name: 'Open in playback' });
-  await expect(link).toBeFocused();
-  await expect(page.locator('.floating-tooltip')).toBeVisible();
-
+  const play = page
+    .locator('.alarm-table')
+    .getByRole('button', { name: 'Play', exact: true })
+    .first();
+  await play.focus();
   await page.keyboard.press('Enter');
+
   await expect(page.getByRole('heading', { name: 'Playback', exact: true })).toBeVisible();
   await expect(page.getByLabel('Camera')).toHaveValue(camera.id);
 });

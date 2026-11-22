@@ -274,6 +274,32 @@ test('plays a recording from the motion tooltip', async ({ page, request }) => {
   await expectConsumerCount(feeds.playback.path, 1);
 });
 
+test('keeps results when the quick range changes', async ({ page, request }) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Playback range retention'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openPlayback(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+  await expect(page.locator('.playback-timeline-segment')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Yesterday' }).click();
+
+  await expect(page.locator('.playback-timeline-segment')).toHaveCount(2);
+  await expect(page.getByText('Search again to apply it')).toBeVisible();
+  await expect(page.getByLabel('From', { exact: true })).toHaveValue(
+    /^\d{2}-\d{2}-\d{4} 00:00:00$/,
+  );
+
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+  await expect(page.locator('.playback-timeline-segment')).toHaveCount(2);
+  await expect(page.getByText('Search again to apply it')).toHaveCount(0);
+});
+
 test('stops playback when the tab is hidden and resumes on return', async ({
   page,
   request,

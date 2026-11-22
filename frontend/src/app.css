@@ -1789,6 +1789,96 @@ button.feed-center:hover .feed-hint {
   white-space: nowrap;
 }
 
+.alarm-day-entries {
+  grid-column: 1 / -1;
+  max-height: 15rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.alarm-table {
+  width: 100%;
+  min-width: 38rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.alarm-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.alarm-table td {
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.alarm-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.alarm-table-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alarm-table-badges {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.35rem;
+}
+
+.alarm-table-target {
+  font-weight: 600;
+}
+
+.alarm-target-human {
+  color: #5eead4;
+}
+
+.alarm-target-vehicle {
+  color: #fcd34d;
+}
+
+.alarm-target-unknown {
+  color: var(--text);
+}
+
+.alarm-table-camera {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 12rem;
+}
+
+.alarm-table-nvr {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.alarm-table-duration {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alarm-table-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .tooltip-link {
   display: inline-flex;
   margin-top: 0.55rem;
