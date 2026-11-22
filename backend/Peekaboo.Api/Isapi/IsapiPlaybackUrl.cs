@@ -1,8 +1,11 @@
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Isapi;
 
 /// <summary>
 /// Builds the RTSP playback URL documented in ISAPI section 15.9.17. The track ID
-/// is the camera's main stream ID (channel * 100 + 1).
+/// is the camera's main stream ID (channel * 100 + 1). Hikvision firmware expects
+/// device-local wall-clock components in this URL.
 /// </summary>
 public static class IsapiPlaybackUrl
 {
@@ -12,8 +15,9 @@ public static class IsapiPlaybackUrl
         string rtspBaseUrl,
         string trackId,
         DateTimeOffset start,
-        DateTimeOffset end) =>
+        DateTimeOffset end,
+        INvrTimeZone timeZone) =>
         $"{rtspBaseUrl.TrimEnd('/')}{TracksPath}/{Uri.EscapeDataString(trackId)}" +
-        $"?starttime={IsapiTime.FormatPlayback(start)}" +
-        $"&endtime={IsapiTime.FormatPlayback(end)}";
+        $"?starttime={IsapiTime.FormatPlayback(timeZone.ToDeviceWallTime(start))}" +
+        $"&endtime={IsapiTime.FormatPlayback(timeZone.ToDeviceWallTime(end))}";
 }

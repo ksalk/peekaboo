@@ -3,6 +3,7 @@ using System.Text;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Nvrs;
 using Xunit;
 
 namespace Peekaboo.Tests.Isapi;
@@ -152,8 +153,8 @@ public sealed class IsapiClientTests
         var baseTime = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
         var spans = Enumerable.Range(0, 1000)
             .Select(index => (
-                IsapiTime.FormatSearch(baseTime.AddSeconds(index)),
-                IsapiTime.FormatSearch(baseTime.AddSeconds(index + 1))))
+                IsapiTime.FormatSearch(baseTime.AddSeconds(index).UtcDateTime),
+                IsapiTime.FormatSearch(baseTime.AddSeconds(index + 1).UtcDateTime)))
             .ToArray();
 
         var handler = new StubHandler((_, _) => Xml(Result("OK", 1000, spans)));
@@ -165,6 +166,28 @@ public sealed class IsapiClientTests
 
         Assert.Equal(1000, result.Segments.Count);
         Assert.False(result.Truncated);
+    }
+
+    [Fact]
+    public async Task Search_round_trips_device_local_times_as_utc()
+    {
+        var handler = new StubHandler((_, _) => Xml(Result(
+            "OK",
+            numOfMatches: 1,
+            ("2026-11-20T11:00:00Z", "2026-11-20T11:05:00Z"))));
+        var zone = new FixedNvrTimeZone("CET", TimeSpan.FromHours(1));
+
+        using var http = new HttpClient(handler);
+        var client = CreateClient(http);
+
+        var result = await client.SearchRecordingsAsync(Request(zone), CancellationToken.None);
+
+        var segment = Assert.Single(result.Segments);
+        Assert.Equal(
+            new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero),
+            segment.Start);
+        Assert.Contains("<startTime>2026-11-20T11:00:00Z</startTime>", handler.Bodies[0]);
+        Assert.Contains("<endTime>2026-11-20T12:00:00Z</endTime>", handler.Bodies[0]);
     }
 
     [Fact]
@@ -212,13 +235,14 @@ public sealed class IsapiClientTests
         return new IsapiClient(http, resolver, NullLogger<IsapiClient>.Instance);
     }
 
-    private static IsapiSearchRequest Request() =>
+    private static IsapiSearchRequest Request(INvrTimeZone? timeZone = null) =>
         new(
             "nvr-1",
             "rtsp://nvr.local:554",
             "101",
             new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2026, 11, 20, 11, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 11, 20, 11, 0, 0, TimeSpan.Zero),
+            timeZone ?? TestNvrTimeZones.Utc);
 
     private static HttpResponseMessage Xml(string xml) =>
         new(HttpStatusCode.OK)

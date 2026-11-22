@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
 
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Isapi;
 
 public sealed class IsapiClient : IIsapiClient
@@ -58,6 +60,7 @@ public sealed class IsapiClient : IIsapiClient
                 request.TrackId,
                 request.Start,
                 request.End,
+                request.TimeZone,
                 PageSize,
                 position);
 
@@ -212,7 +215,7 @@ public sealed class IsapiClient : IIsapiClient
             try
             {
                 var body = await ReadBodyAsync(response, timeout.Token);
-                return IsapiSearchXml.Parse(body);
+                return IsapiSearchXml.Parse(body, request.TimeZone);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {

@@ -141,7 +141,7 @@ public sealed class CameraService(AppDatabase database)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT c.id, c.name, n.id, n.transport, n.base_url, n.sdk_port,
-                   c.main_stream_id
+                   c.main_stream_id, n.time_zone
             FROM cameras c
             JOIN nvrs n ON n.id = c.nvr_id
             WHERE c.id = $id
@@ -163,7 +163,8 @@ public sealed class CameraService(AppDatabase database)
             new Uri(baseUrl, UriKind.Absolute).Host.Trim('[', ']'),
             reader.GetInt32(5),
             baseUrl,
-            reader.GetString(6));
+            reader.GetString(6),
+            reader.GetString(7));
     }
 
     public CameraStreamTarget? GetStreamTarget(string cameraId, CameraStream stream)

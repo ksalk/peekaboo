@@ -37,7 +37,8 @@ public sealed record CameraPlaybackSource(
     string NvrHost,
     int SdkPort,
     string RtspBaseUrl,
-    string MainStreamId);
+    string MainStreamId,
+    string NvrTimeZone);
 
 public static class CameraValidation
 {

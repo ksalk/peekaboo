@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
 
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Isapi;
 
 public sealed class IsapiAlarmLogClient : IIsapiAlarmLogClient
@@ -70,6 +72,7 @@ public sealed class IsapiAlarmLogClient : IIsapiAlarmLogClient
                     searchId,
                     request.Start,
                     request.End,
+                    request.TimeZone,
                     PageSize,
                     position);
 
@@ -261,7 +264,7 @@ public sealed class IsapiAlarmLogClient : IIsapiAlarmLogClient
             try
             {
                 var body = await ReadBodyAsync(response, timeout.Token);
-                return IsapiAlarmLogXml.Parse(body);
+                return IsapiAlarmLogXml.Parse(body, request.TimeZone);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {

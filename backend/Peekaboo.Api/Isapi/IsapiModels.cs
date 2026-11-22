@@ -1,3 +1,5 @@
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Isapi;
 
 public enum IsapiFailureKind
@@ -21,7 +23,8 @@ public sealed record IsapiSearchRequest(
     string RtspBaseUrl,
     string TrackId,
     DateTimeOffset Start,
-    DateTimeOffset End);
+    DateTimeOffset End,
+    INvrTimeZone TimeZone);
 
 public sealed record IsapiRecordingSegment(
     DateTimeOffset Start,

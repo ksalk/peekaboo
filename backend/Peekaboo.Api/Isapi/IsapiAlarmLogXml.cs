@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
+using Peekaboo.Api.Nvrs;
 
 namespace Peekaboo.Api.Isapi;
 
@@ -19,9 +20,13 @@ internal static class IsapiAlarmLogXml
         string searchId,
         DateTimeOffset start,
         DateTimeOffset end,
+        INvrTimeZone timeZone,
         int maxResults,
         int position)
     {
+        var deviceStart = timeZone.ToDeviceWallTime(start);
+        var deviceEnd = timeZone.ToDeviceWallTime(end);
+
         var document = new XDocument(
             new XElement(
                 "CMSearchDescription",
@@ -31,8 +36,8 @@ internal static class IsapiAlarmLogXml
                     "timeSpanList",
                     new XElement(
                         "timeSpan",
-                        new XElement("startTime", IsapiTime.FormatSearch(start)),
-                        new XElement("endTime", IsapiTime.FormatSearch(end)))),
+                        new XElement("startTime", IsapiTime.FormatSearch(deviceStart)),
+                        new XElement("endTime", IsapiTime.FormatSearch(deviceEnd)))),
                 new XElement("metaId", AlarmMetaId),
                 new XElement("maxResults", maxResults.ToString(CultureInfo.InvariantCulture)),
                 // Hikvision firmware expects this misspelling.
@@ -43,7 +48,7 @@ internal static class IsapiAlarmLogXml
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
-    public static IsapiAlarmLogPage Parse(string xml)
+    public static IsapiAlarmLogPage Parse(string xml, INvrTimeZone timeZone)
     {
         XDocument document;
         try
@@ -140,7 +145,7 @@ internal static class IsapiAlarmLogXml
                 continue;
             }
 
-            if (ParseEntry(descriptor) is { } entry)
+            if (ParseEntry(descriptor, timeZone) is { } entry)
             {
                 entries.Add(entry);
             }
@@ -154,10 +159,12 @@ internal static class IsapiAlarmLogXml
             DeviceError: null);
     }
 
-    private static IsapiAlarmLogEntry? ParseEntry(XElement descriptor)
+    private static IsapiAlarmLogEntry? ParseEntry(
+        XElement descriptor,
+        INvrTimeZone timeZone)
     {
         var metaId = ChildValue(descriptor, "metaId")?.Trim();
-        var time = IsapiTime.Parse(ChildValue(descriptor, "StartDateTime"));
+        var time = IsapiTime.Parse(ChildValue(descriptor, "StartDateTime"), timeZone);
         if (string.IsNullOrEmpty(metaId) || time is null)
         {
             return null;

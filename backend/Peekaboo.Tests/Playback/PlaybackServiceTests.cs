@@ -21,6 +21,7 @@ public sealed class PlaybackServiceTests : IDisposable
     private readonly CameraService _cameras;
     private readonly FakeIsapiClient _isapi = new();
     private readonly FakeHikvisionSearch _sdkSearch = new();
+    private readonly FakeClockResolver _clocks = new();
     private readonly PlaybackService _playbacks;
 
     public PlaybackServiceTests()
@@ -29,7 +30,7 @@ public sealed class PlaybackServiceTests : IDisposable
         _database.Initialize(NullLogger<AppDatabase>.Instance);
         _nvrs = new NvrService(_database);
         _cameras = new CameraService(_database);
-        _playbacks = new PlaybackService(_cameras, _isapi, _sdkSearch);
+        _playbacks = new PlaybackService(_cameras, _isapi, _sdkSearch, _clocks);
     }
 
     [Fact]
@@ -41,7 +42,11 @@ public sealed class PlaybackServiceTests : IDisposable
 
         var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
         var source = Assert.IsType<RtspStreamSource>(
-            _playbacks.GetStreamSource(camera.Id, start, start.AddMinutes(5)));
+            _playbacks.GetStreamSource(
+                camera.Id,
+                start,
+                start.AddMinutes(5),
+                _clocks.TimeZone));
 
         Assert.True(source.IsPlayback);
         Assert.Equal(TimeSpan.FromMinutes(5), source.MaximumDuration);
@@ -62,7 +67,7 @@ public sealed class PlaybackServiceTests : IDisposable
         var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
         var end = start.AddMinutes(5);
         var source = Assert.IsType<HikvisionPlaybackStreamSource>(
-            _playbacks.GetStreamSource(camera.Id, start, end));
+            _playbacks.GetStreamSource(camera.Id, start, end, _clocks.TimeZone));
 
         Assert.True(source.IsPlayback);
         Assert.Equal(TimeSpan.FromMinutes(5), source.MaximumDuration);
@@ -87,7 +92,11 @@ public sealed class PlaybackServiceTests : IDisposable
 
         var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
         var exception = Assert.Throws<HikvisionException>(
-            () => _playbacks.GetStreamSource(camera.Id, start, start.AddMinutes(5)));
+            () => _playbacks.GetStreamSource(
+                camera.Id,
+                start,
+                start.AddMinutes(5),
+                _clocks.TimeZone));
 
         Assert.Equal(HikvisionFailureKind.Channel, exception.Kind);
     }
@@ -157,7 +166,51 @@ public sealed class PlaybackServiceTests : IDisposable
         Assert.Equal("H.264", recording.CodecType);
         Assert.Contains("/ISAPI/Streaming/tracks/101", recording.PlaybackUrl, StringComparison.Ordinal);
         Assert.Equal(1, _isapi.CallCount);
+        Assert.NotNull(_isapi.LastRequest);
+        Assert.Same(_clocks.TimeZone, _isapi.LastRequest.TimeZone);
         Assert.Null(_sdkSearch.LastRequest);
+    }
+
+    [Fact]
+    public void Rtsp_playback_url_uses_the_nvr_wall_clock()
+    {
+        var nvr = _nvrs.Create("House NVR", "rtsp://192.168.10.60:554");
+        var camera = _cameras.Create(nvr.Id, "Front door", "101", "102");
+        Assert.NotNull(camera);
+
+        _clocks.TimeZone = new FixedNvrTimeZone("CET", TimeSpan.FromHours(1));
+        var start = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.Zero);
+
+        var source = Assert.IsType<RtspStreamSource>(
+            _playbacks.GetStreamSource(
+                camera.Id,
+                start,
+                start.AddMinutes(5),
+                _clocks.TimeZone));
+
+        Assert.Contains("starttime=20261120T110000Z", source.Url, StringComparison.Ordinal);
+        Assert.Contains("endtime=20261120T110500Z", source.Url, StringComparison.Ordinal);
+    }
+
+    private sealed class FakeClockResolver : INvrClockResolver
+    {
+        public INvrTimeZone TimeZone { get; set; } = TestNvrTimeZones.Utc;
+
+        public Task<NvrClock> ResolveAsync(
+            string nvrId,
+            string baseUrl,
+            string timeZone,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new NvrClock(
+                TimeZone,
+                "test",
+                DetectedTimeZone: null,
+                DateTimeOffset.UtcNow,
+                Error: null));
+
+        public void Invalidate(string nvrId)
+        {
+        }
     }
 
     private sealed class FakeHikvisionSearch : IHikvisionRecordingSearch
@@ -179,6 +232,8 @@ public sealed class PlaybackServiceTests : IDisposable
     {
         public int CallCount { get; private set; }
 
+        public IsapiSearchRequest? LastRequest { get; private set; }
+
         public IsapiSearchResult Result { get; set; } = new([], Truncated: false);
 
         public Task<IsapiSearchResult> SearchRecordingsAsync(
@@ -186,6 +241,7 @@ public sealed class PlaybackServiceTests : IDisposable
             CancellationToken cancellationToken)
         {
             CallCount++;
+            LastRequest = request;
             return Task.FromResult(Result);
         }
     }

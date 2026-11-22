@@ -3,6 +3,7 @@ using System.Text;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Nvrs;
 using Xunit;
 
 namespace Peekaboo.Tests.Isapi;
@@ -135,7 +136,7 @@ public sealed class IsapiAlarmLogClientTests
             numOfMatches: 1,
             (
                 "log.hikvision.com/Alarm/motionStart/1",
-                IsapiTime.FormatSearch(baseTime.AddSeconds(index)),
+                IsapiTime.FormatSearch(baseTime.AddSeconds(index).UtcDateTime),
                 "D1",
                 "Osoba"))));
 
@@ -147,6 +148,28 @@ public sealed class IsapiAlarmLogClientTests
         Assert.Equal(200, result.Entries.Count);
         Assert.True(result.Truncated);
         Assert.Equal(200, handler.Bodies.Count);
+    }
+
+    [Fact]
+    public async Task Search_round_trips_device_local_alarm_times_as_utc()
+    {
+        var handler = new StubHandler((_, _) => Xml(Result(
+            "OK",
+            2,
+            ("log.hikvision.com/Alarm/motionStart/1", "2026-11-21T09:44:55Z", "D1", "Osoba"),
+            ("log.hikvision.com/Alarm/motionStop/1", "2026-11-21T09:45:02Z", "D1", "Osoba"))));
+        var zone = new FixedNvrTimeZone("CET", TimeSpan.FromHours(1));
+
+        using var http = new HttpClient(handler);
+        var client = CreateClient(http);
+
+        var result = await client.SearchAsync(Request(zone), CancellationToken.None);
+
+        Assert.Equal(2, result.Entries.Count);
+        Assert.Equal(
+            new DateTimeOffset(2026, 11, 21, 8, 44, 55, TimeSpan.Zero),
+            result.Entries[0].Time);
+        Assert.Contains("<startTime>2026-11-21T01:00:00Z</startTime>", handler.Bodies[0]);
     }
 
     [Fact]
@@ -295,12 +318,13 @@ public sealed class IsapiAlarmLogClientTests
             totalTimeout);
     }
 
-    private static IsapiAlarmLogRequest Request() =>
+    private static IsapiAlarmLogRequest Request(INvrTimeZone? timeZone = null) =>
         new(
             "nvr-1",
             "rtsp://nvr.local:554",
             new DateTimeOffset(2026, 11, 21, 0, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2026, 11, 22, 0, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 11, 22, 0, 0, 0, TimeSpan.Zero),
+            timeZone ?? TestNvrTimeZones.Utc);
 
     private static HttpResponseMessage Xml(string xml) =>
         new(HttpStatusCode.OK)

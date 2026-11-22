@@ -40,17 +40,20 @@ public sealed class AlarmRangeService
     private readonly CameraService _cameras;
     private readonly NvrService _nvrs;
     private readonly IIsapiAlarmLogClient _logs;
+    private readonly INvrClockResolver _clocks;
     private readonly IMemoryCache _cache;
 
     public AlarmRangeService(
         CameraService cameras,
         NvrService nvrs,
         IIsapiAlarmLogClient logs,
+        INvrClockResolver clocks,
         IMemoryCache cache)
     {
         _cameras = cameras;
         _nvrs = nvrs;
         _logs = logs;
+        _clocks = clocks;
         _cache = cache;
     }
 
@@ -135,10 +138,17 @@ public sealed class AlarmRangeService
 
             try
             {
+                var clock = await _clocks.ResolveAsync(
+                    nvr.Id,
+                    nvr.BaseUrl,
+                    nvr.TimeZone,
+                    cancellationToken);
+
                 var logs = await SearchLogsAsync(
                     nvr,
                     queryStart,
                     queryEnd,
+                    clock.TimeZone,
                     cancellationToken);
                 truncated |= logs.Truncated;
 
@@ -224,16 +234,22 @@ public sealed class AlarmRangeService
         NvrDto nvr,
         DateTimeOffset start,
         DateTimeOffset end,
+        INvrTimeZone timeZone,
         CancellationToken cancellationToken)
     {
-        var key = $"alarm-log:{nvr.Id}:{start.UtcTicks}:{end.UtcTicks}";
+        var key = $"alarm-log:{nvr.Id}:{timeZone.Id}:{start.UtcTicks}:{end.UtcTicks}";
         if (_cache.TryGetValue(key, out IsapiAlarmLogResult? cached) && cached is not null)
         {
             return cached;
         }
 
         var result = await _logs.SearchAsync(
-            new IsapiAlarmLogRequest(nvr.Id, nvr.BaseUrl, start, end),
+            new IsapiAlarmLogRequest(
+                nvr.Id,
+                nvr.BaseUrl,
+                start,
+                end,
+                timeZone),
             cancellationToken);
 
         _cache.Set(

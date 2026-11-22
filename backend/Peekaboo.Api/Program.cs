@@ -63,7 +63,8 @@ builder.Services.AddSingleton<AlarmRangeService>();
 builder.Services.AddSingleton(services => new PlaybackService(
     services.GetRequiredService<CameraService>(),
     services.GetRequiredService<IIsapiClient>(),
-    services.GetRequiredService<IHikvisionRecordingSearch>()));
+    services.GetRequiredService<IHikvisionRecordingSearch>(),
+    services.GetRequiredService<INvrClockResolver>()));
 builder.Services.AddSingleton(StreamOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddSingleton<StreamSourceFactory>();
 builder.Services.AddSingleton<IStreamInputFactory>(services => new HikvisionStreamInputFactory(

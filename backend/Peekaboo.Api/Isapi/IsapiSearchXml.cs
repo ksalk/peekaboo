@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
+using Peekaboo.Api.Nvrs;
 
 namespace Peekaboo.Api.Isapi;
 
@@ -17,9 +18,13 @@ internal static class IsapiSearchXml
         string trackId,
         DateTimeOffset start,
         DateTimeOffset end,
+        INvrTimeZone timeZone,
         int maxResults,
         int position)
     {
+        var deviceStart = timeZone.ToDeviceWallTime(start);
+        var deviceEnd = timeZone.ToDeviceWallTime(end);
+
         var document = new XDocument(
             new XElement(
                 "CMSearchDescription",
@@ -31,8 +36,8 @@ internal static class IsapiSearchXml
                     "timeSpanList",
                     new XElement(
                         "timeSpan",
-                        new XElement("startTime", IsapiTime.FormatSearch(start)),
-                        new XElement("endTime", IsapiTime.FormatSearch(end)))),
+                        new XElement("startTime", IsapiTime.FormatSearch(deviceStart)),
+                        new XElement("endTime", IsapiTime.FormatSearch(deviceEnd)))),
                 new XElement("maxResults", maxResults.ToString(CultureInfo.InvariantCulture)),
                 new XElement("searchResultPostion", position.ToString(CultureInfo.InvariantCulture)),
                 new XElement(
@@ -42,7 +47,7 @@ internal static class IsapiSearchXml
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
-    public static IsapiSearchPage Parse(string xml)
+    public static IsapiSearchPage Parse(string xml, INvrTimeZone timeZone)
     {
         XDocument document;
         try
@@ -116,8 +121,8 @@ internal static class IsapiSearchXml
         foreach (var item in items)
         {
             var timeSpan = Child(item, "timeSpan");
-            var start = IsapiTime.Parse(ChildValue(timeSpan, "startTime"));
-            var end = IsapiTime.Parse(ChildValue(timeSpan, "endTime"));
+            var start = IsapiTime.Parse(ChildValue(timeSpan, "startTime"), timeZone);
+            var end = IsapiTime.Parse(ChildValue(timeSpan, "endTime"), timeZone);
 
             if (start is null || end is null || end <= start)
             {

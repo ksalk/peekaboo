@@ -11,20 +11,43 @@ public sealed class PlaybackService
     private readonly CameraService _cameras;
     private readonly IIsapiClient _isapi;
     private readonly IHikvisionRecordingSearch _hikvisionSearch;
+    private readonly INvrClockResolver _clocks;
 
     internal PlaybackService(
         CameraService cameras,
         IIsapiClient isapi,
-        IHikvisionRecordingSearch hikvisionSearch)
+        IHikvisionRecordingSearch hikvisionSearch,
+        INvrClockResolver clocks)
     {
         _cameras = cameras;
         _isapi = isapi;
         _hikvisionSearch = hikvisionSearch;
+        _clocks = clocks;
     }
+
+    public async Task<INvrTimeZone?> GetTimeZoneAsync(
+        string cameraId,
+        CancellationToken cancellationToken)
+    {
+        var source = _cameras.GetPlaybackSource(cameraId);
+        if (source is null)
+        {
+            return null;
+        }
+
+        var clock = await _clocks.ResolveAsync(
+            source.NvrId,
+            source.RtspBaseUrl,
+            source.NvrTimeZone,
+            cancellationToken);
+        return clock.TimeZone;
+    }
+
     public StreamSource? GetStreamSource(
         string cameraId,
         DateTimeOffset start,
-        DateTimeOffset end)
+        DateTimeOffset end,
+        INvrTimeZone timeZone)
     {
         var source = _cameras.GetPlaybackSource(cameraId);
         if (source is null)
@@ -39,7 +62,8 @@ public sealed class PlaybackService
                     source.RtspBaseUrl,
                     source.MainStreamId,
                     start,
-                    end),
+                    end,
+                    timeZone),
                 Playback: true,
                 Duration: end - start);
         }
@@ -82,6 +106,12 @@ public sealed class PlaybackService
             return null;
         }
 
+        var clock = await _clocks.ResolveAsync(
+            source.NvrId,
+            source.RtspBaseUrl,
+            source.NvrTimeZone,
+            cancellationToken);
+
         if (source.NvrTransport == NvrTransports.HikvisionSdk)
         {
             var sdkResult = await _hikvisionSearch.SearchAsync(
@@ -115,7 +145,8 @@ public sealed class PlaybackService
                 source.RtspBaseUrl,
                 source.MainStreamId,
                 start,
-                end),
+                end,
+                clock.TimeZone),
             cancellationToken);
 
         var recordings = result.Segments
@@ -135,7 +166,8 @@ public sealed class PlaybackService
                         source.RtspBaseUrl,
                         source.MainStreamId,
                         segment.Start,
-                        segment.End));
+                        segment.End,
+                        clock.TimeZone));
             })
             .ToList();
 

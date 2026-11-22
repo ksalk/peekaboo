@@ -5,6 +5,9 @@ namespace Peekaboo.Api.Nvrs;
 /// Hikvision firmware commonly reports device-local wall time even when the
 /// payload is suffixed with <c>Z</c>, so services must not assume that an
 /// unlabelled device timestamp is UTC.
+///
+/// A wall time repeated by a fall-back transition has no unique instant in the
+/// device payload. Implementations choose the first occurrence.
 /// </summary>
 public interface INvrTimeZone
 {

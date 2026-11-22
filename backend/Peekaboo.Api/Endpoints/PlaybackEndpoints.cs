@@ -1,6 +1,7 @@
 using Peekaboo.Api.Cameras;
 using Peekaboo.Api.Hikvision;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Nvrs;
 using Peekaboo.Api.Playback;
 using Peekaboo.Api.Streaming;
 
@@ -24,7 +25,6 @@ public static class PlaybackEndpoints
         string? start,
         string? end,
         HttpContext context,
-        CameraService cameras,
         PlaybackService playbacks,
         StreamManager streams,
         CancellationToken cancellationToken)
@@ -54,7 +54,8 @@ public static class PlaybackEndpoints
             return;
         }
 
-        if (cameras.GetPlaybackSource(id) is null)
+        var timeZone = await playbacks.GetTimeZoneAsync(id, cancellationToken);
+        if (timeZone is null)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -71,7 +72,7 @@ public static class PlaybackEndpoints
 
         await streams.RunAsync(
             StreamKey.Playback(id, from, to),
-            () => playbacks.GetStreamSource(id, from, to),
+            () => playbacks.GetStreamSource(id, from, to, timeZone),
             socket,
             cancellationToken);
     }

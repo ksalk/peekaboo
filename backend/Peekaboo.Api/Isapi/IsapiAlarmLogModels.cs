@@ -1,3 +1,5 @@
+using Peekaboo.Api.Nvrs;
+
 namespace Peekaboo.Api.Isapi;
 
 public enum IsapiAlarmLogKind
@@ -10,7 +12,8 @@ public sealed record IsapiAlarmLogRequest(
     string NvrId,
     string RtspBaseUrl,
     DateTimeOffset Start,
-    DateTimeOffset End);
+    DateTimeOffset End,
+    INvrTimeZone TimeZone);
 
 public sealed record IsapiAlarmLogEntry(
     IsapiAlarmLogKind Kind,

@@ -5,6 +5,9 @@ const username = process.env.CAMERA_USERNAME ?? 'camuser';
 const password = process.env.CAMERA_PASSWORD ?? 'campassword';
 const expectedAuthorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 const maximumBodyBytes = 256 * 1024;
+const deviceOffsetMinutes = Number(
+  process.env.PEEKABOO_FAKE_NVR_OFFSET_MINUTES ?? '60',
+);
 
 const server = http.createServer((request, response) => {
   void handle(request, response).catch((error) => {
@@ -46,9 +49,16 @@ async function handle(request, response) {
   }
 
   if (request.method === 'GET' && request.url === '/ISAPI/System/time') {
-    const localTime = new Date(Date.now() + 60 * 60 * 1000)
+    const offsetSign = deviceOffsetMinutes >= 0 ? '+' : '-';
+    const offsetHours = Math.floor(Math.abs(deviceOffsetMinutes) / 60)
+      .toString()
+      .padStart(2, '0');
+    const offsetMinutesPart = (Math.abs(deviceOffsetMinutes) % 60)
+      .toString()
+      .padStart(2, '0');
+    const localTime = new Date(Date.now() + deviceOffsetMinutes * 60 * 1000)
       .toISOString()
-      .replace(/\.\d{3}Z$/, '+01:00');
+      .replace(/\.\d{3}Z$/, `${offsetSign}${offsetHours}:${offsetMinutesPart}`);
 
     response.writeHead(200, { 'Content-Type': 'application/xml' });
     response.end(
@@ -76,8 +86,8 @@ async function handle(request, response) {
       return;
     }
 
-    const start = new Date(startValue);
-    const end = new Date(endValue);
+    const start = parseDeviceTime(startValue);
+    const end = parseDeviceTime(endValue);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
       response.end(resultXml(trackId, 'NO MATCHES', 0, []));
@@ -146,8 +156,8 @@ async function handle(request, response) {
       return;
     }
 
-    const start = new Date(startValue);
-    const end = new Date(endValue);
+    const start = parseDeviceTime(startValue);
+    const end = parseDeviceTime(endValue);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
       response.end(logResultXml('NO MATCHES', 0, []));
@@ -263,7 +273,17 @@ function logResultXml(status, numOfMatches, entries) {
 }
 
 function formatTime(value) {
-  return value.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const shifted = new Date(value.getTime() + deviceOffsetMinutes * 60 * 1000);
+  return shifted.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function parseDeviceTime(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return new Date(parsed.getTime() - deviceOffsetMinutes * 60 * 1000);
 }
 
 function readBody(request) {

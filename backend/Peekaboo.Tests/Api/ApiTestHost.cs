@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Peekaboo.Api.Isapi;
+using Peekaboo.Api.Nvrs;
 
 namespace Peekaboo.Tests.Api;
 
@@ -22,7 +23,8 @@ internal sealed class ApiTestHost : IDisposable
     public ApiTestHost(
         IReadOnlyDictionary<string, string?>? settings = null,
         IIsapiClient? isapiClient = null,
-        IIsapiAlarmLogClient? alarmLogClient = null)
+        IIsapiAlarmLogClient? alarmLogClient = null,
+        INvrClockResolver? clockResolver = null)
     {
         DatabasePath = Path.Combine(_directory, "peekaboo.db");
 
@@ -57,6 +59,13 @@ internal sealed class ApiTestHost : IDisposable
                     services.AddSingleton(alarmLogClient);
                 });
             }
+
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<INvrClockResolver>();
+                services.AddSingleton<INvrClockResolver>(
+                    clockResolver ?? new FixedClockResolver());
+            });
         });
     }
 
@@ -92,6 +101,25 @@ internal sealed class ApiTestHost : IDisposable
         if (Directory.Exists(_directory))
         {
             Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    private sealed class FixedClockResolver : INvrClockResolver
+    {
+        public Task<NvrClock> ResolveAsync(
+            string nvrId,
+            string baseUrl,
+            string timeZone,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new NvrClock(
+                TestNvrTimeZones.Utc,
+                "test",
+                DetectedTimeZone: null,
+                DateTimeOffset.UtcNow,
+                Error: null));
+
+        public void Invalidate(string nvrId)
+        {
         }
     }
 }
