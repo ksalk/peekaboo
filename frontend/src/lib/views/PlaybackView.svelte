@@ -2,6 +2,8 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { SvelteDate, SvelteMap } from 'svelte/reactivity';
   import { api, errorMessage } from '../api';
+  import PlaybackTimeline from '../components/PlaybackTimeline.svelte';
+  import { formatDuration, segmentsOverlap } from '../playback-utils';
   import { StreamPlayer } from '../stream-player';
   import type { Camera, RecordingSearchResult, RecordingSegment } from '../types';
 
@@ -344,14 +346,7 @@
   }
 
   function isSelected(segment: RecordingSegment): boolean {
-    if (!selectedSegment) {
-      return false;
-    }
-
-    return (
-      new Date(segment.start).getTime() < new Date(selectedSegment.end).getTime() &&
-      new Date(segment.end).getTime() > new Date(selectedSegment.start).getTime()
-    );
+    return selectedSegment !== null && segmentsOverlap(segment, selectedSegment);
   }
 
   function jumpToOffset() {
@@ -443,23 +438,6 @@
       month: 'long',
       day: 'numeric',
     }).format(new Date(iso));
-  }
-
-  function formatDuration(seconds: number): string {
-    const total = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor((total % 3600) / 60);
-    const remainder = total % 60;
-
-    if (hours > 0) {
-      return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
-    }
-
-    if (minutes > 0) {
-      return `${minutes}m ${remainder.toString().padStart(2, '0')}s`;
-    }
-
-    return `${remainder}s`;
   }
 
   function dayKey(value: Date): string {
@@ -683,6 +661,15 @@
           <p>Try another date or a wider time range.</p>
         </div>
       {:else}
+        <PlaybackTimeline
+          start={result.start}
+          end={result.end}
+          recordings={result.recordings}
+          selectedSegment={selectedSegment}
+          truncated={result.truncated}
+          onPlay={(segment) => void play(segment)}
+        />
+
         {#each groups as group (group.key)}
           <section class="recording-group">
             <h2>{group.label}</h2>

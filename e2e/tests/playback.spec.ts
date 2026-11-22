@@ -33,6 +33,15 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   const rows = page.locator('.recording-row');
   await expect(rows).toHaveCount(2);
 
+  const timeline = page.locator('.playback-timeline');
+  await expect(timeline).toBeVisible();
+  const timelineSegments = timeline.locator('.playback-timeline-segment');
+  await expect(timelineSegments).toHaveCount(2);
+  await expect(timelineSegments.first()).toHaveAttribute(
+    'aria-label',
+    /Play recording from/,
+  );
+
   const row = rows.first();
   await expect(row).toBeVisible();
 
@@ -105,6 +114,73 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expectConsumerCount(feeds.playback.path, 0);
   await expect(page.locator('.playback-video')).toHaveCount(0);
+});
+
+test('plays from the recording coverage timeline', async ({ page, request }) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Timeline camera'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openPlayback(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+
+  const timeline = page.locator('.playback-timeline');
+  await expect(timeline).toBeVisible();
+  await expect(timeline.locator('.playback-timeline-segment')).toHaveCount(2);
+
+  const segment = timeline.locator('.playback-timeline-segment').nth(1);
+  await expect(segment).toBeVisible();
+
+  const label = await segment.getAttribute('aria-label');
+  const startTime = /Play recording from (.+?) to /.exec(label ?? '')?.[1];
+  expect(startTime).toBeTruthy();
+
+  await expectConsumerCount(feeds.playback.path, 0);
+  await segment.click();
+
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0.5);
+
+  await expectConsumerCount(feeds.playback.path, 1);
+  await expect(segment).toHaveClass(/\bactive\b/);
+  await expect(segment).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.playback-player-header p')).toContainText(startTime!);
+
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expectConsumerCount(feeds.playback.path, 0);
+  await expect(segment).not.toHaveClass(/\bactive\b/);
+  await expect(segment).toHaveAttribute('aria-pressed', 'false');
+
+  await segment.focus();
+  await expect(segment).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0.5);
+
+  await expectConsumerCount(feeds.playback.path, 1);
+  await expect(page.locator('.playback-player-header p')).toContainText(startTime!);
+
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expectConsumerCount(feeds.playback.path, 0);
 });
 
 test('stops playback on navigation and remembers the selected camera', async ({
