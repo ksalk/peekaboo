@@ -67,4 +67,11 @@ export interface AlarmSearchResult {
   end: string;
   truncated: boolean;
   ranges: AlarmRange[];
+  errors: AlarmSearchError[];
+}
+
+export interface AlarmSearchError {
+  nvrId: string;
+  nvrName: string;
+  message: string;
 }

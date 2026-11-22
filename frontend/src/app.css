@@ -1325,6 +1325,132 @@ button.feed-center:hover .feed-hint {
   gap: 0.4rem;
 }
 
+.alarm-filters {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.4fr) minmax(140px, 0.8fr) repeat(2, minmax(190px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.alarm-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.alarm-filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.alarm-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.alarm-summary strong {
+  color: var(--text);
+}
+
+.alarm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.alarm-group h2 {
+  font-size: 1rem;
+}
+
+.alarm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.alarm-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(0, 2fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-raised);
+}
+
+.alarm-time {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.alarm-time strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-time span {
+  font-size: 0.8rem;
+}
+
+.alarm-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.alarm-meta > span:not(.badge) {
+  font-size: 0.85rem;
+}
+
+.badge.alarm-target-human {
+  color: #5eead4;
+  border-color: rgba(20, 184, 166, 0.45);
+  background: rgba(20, 184, 166, 0.16);
+}
+
+.badge.alarm-target-vehicle {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.badge.alarm-target-unknown {
+  color: var(--muted);
+}
+
+@media (max-width: 960px) {
+  .alarm-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .alarm-filter-actions {
+    justify-content: flex-start;
+  }
+
+  .alarm-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .alarm-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .playback-filters {
     grid-template-columns: 1fr 1fr;

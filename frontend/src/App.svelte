@@ -4,15 +4,16 @@
   import LoginView from './lib/views/LoginView.svelte';
   import FeedsView from './lib/views/FeedsView.svelte';
   import PlaybackView from './lib/views/PlaybackView.svelte';
+  import AlarmsView from './lib/views/AlarmsView.svelte';
   import ConfigView from './lib/views/ConfigView.svelte';
   import UsersView from './lib/views/UsersView.svelte';
   import AccountView from './lib/views/AccountView.svelte';
 
-  type Route = 'feeds' | 'playback' | 'config' | 'users' | 'account';
+  type Route = 'feeds' | 'playback' | 'alarms' | 'config' | 'users' | 'account';
 
   function readRoute(): Route {
     const value = window.location.hash.replace(/^#\/?/, '');
-    return value === 'playback' || value === 'config' || value === 'users' || value === 'account'
+    return value === 'playback' || value === 'alarms' || value === 'config' || value === 'users' || value === 'account'
       ? value
       : 'feeds';
   }
@@ -68,6 +69,7 @@
       <nav class="main-nav" aria-label="Main navigation">
         <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
         <a href="#/playback" class:active={route === 'playback'}>Playback</a>
+        <a href="#/alarms" class:active={route === 'alarms'}>Alarms</a>
         <a href="#/config" class:active={route === 'config'}>NVRs</a>
         {#if auth.user.isAdmin}
           <a href="#/users" class:active={route === 'users'}>Users</a>
@@ -88,6 +90,8 @@
         <UsersView />
       {:else if route === 'playback'}
         <PlaybackView />
+      {:else if route === 'alarms'}
+        <AlarmsView />
       {:else if route === 'config'}
         <ConfigView />
       {:else if route === 'account'}
