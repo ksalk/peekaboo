@@ -21,6 +21,9 @@ stream. The same rule applies to recorded playback.
   Layouts and assignments are remembered per device and never auto-start.
 - **Playback** — search a camera's NVR recordings by day and play segments in the
   browser. RTSP recordings also expose credential-free RTSP URLs for another player.
+- **Motion alarms** — read the NVR's alarm log over ISAPI, pair motion start/stop
+  entries into ranges, and show them on the playback timeline and a dedicated
+  **Alarms** page. No persistent alert-stream connection and no local alarm history.
 - **NVR and camera management** — add an NVR by IP/hostname (or an explicit RTSP URL),
   choose RTSP + ISAPI or the Hikvision SDK transport, then add cameras with their
   ISAPI main and sub stream IDs. Stored in SQLite.
@@ -109,6 +112,36 @@ For SDK NVRs, playback uses `NET_DVR_PlayBackByTime_V50` and the same
 ffmpeg/WebSocket relay. It starts at the requested time, stops at the SDK end marker,
 and has no shareable URL. Playback speed and startup latency depend on the NVR; on some
 models a clip can play slower than real time.
+
+### Motion alarms
+
+Peekaboo can read the NVR's own alarm log instead of holding a live alert-stream
+connection. It posts a `CMSearchDescription` to
+`POST /ISAPI/ContentMgmt/logSearch`:
+
+```xml
+<metaId>log.std-cgi.com/Alarm</metaId>
+```
+
+It keeps `motionStart` / `motionStop` entries and pairs them into motion ranges.
+Pagination advances by the rows the NVR actually returns, so firmware that returns
+64 rows per page is handled correctly.
+
+- The playback timeline shows a **Motion** lane above recording coverage.
+- The **Alarms** page searches by camera, target, and time with Today, Yesterday, and
+  Last 7 days shortcuts.
+- Ranges are fetched on demand and cached in memory for 30 seconds. Nothing is written
+  to SQLite, so history is limited by the NVR's log retention.
+- A query may span at most 31 days.
+- The NVR must have motion detection enabled and retain its alarm log. The alert-stream
+  "Notify Surveillance Center" permission is not required for this mode.
+- NVR log timestamps are treated as UTC. Keep the NVR clock and timezone correct.
+- Target labels come from the NVR's localized log text (`Osoba`, `Pojazd`,
+  `Person`, `Vehicle`, …); Peekaboo normalizes the known values to person/vehicle.
+- SDK-transport NVRs still need their HTTP(S) ISAPI service reachable for log search.
+
+See [docs/alarms.md](docs/alarms.md) for the log-search details, API, and
+troubleshooting.
 
 ## Quick start (Docker)
 
@@ -211,7 +244,8 @@ main, `2` is sub, and `3` is third stream. For example, channel 1 main is `101`,
 channel 1 sub is `102`, and channel 16 main is `1601`.
 
 Recording search needs an NVR account with remote playback and recording-search
-permissions. Grant those rights in the NVR's user management.
+permissions. Motion alarm search needs permission to read the NVR log. Grant those
+rights in the NVR's user management.
 
 For RTSP NVRs, at stream start Peekaboo builds:
 
@@ -448,6 +482,9 @@ Operational notes:
   network.
 - The SQLite volume contains password hashes, NVR addresses and camera names/IDs;
   protect and back it up accordingly.
+- Motion alarm history is fetched from the NVR on demand and is not stored by
+  Peekaboo, but it is readable by every authenticated user, consistent with camera
+  visibility. Alarm logs can reveal occupancy and movement patterns.
 - Peekaboo is designed for a trusted self-hosted network. It is not multi-tenant.
 
 See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
@@ -458,7 +495,7 @@ See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 - Video only; audio is intentionally dropped to save bandwidth.
 - 1–3 second latency (depends on the NVR/camera GOP/encoder settings).
 - One app instance per database; streaming state is in-process and not clustered.
-- No in-app recording, export/download, motion detection, PTZ controls, or automatic
+- No in-app recording, export/download, PTZ controls, or automatic live-stream
   reconnect (reconnect is deliberately manual so a stopped stream cannot start itself).
 - No automatic NVR channel discovery; add camera stream IDs manually.
 - For RTSP NVRs, recording search requires the NVR's HTTP(S) ISAPI service to be
@@ -477,6 +514,13 @@ See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
   playback stream can span at most 24 hours.
 - Playback starts at the selected segment or time; there is no timeline scrubbing or
   seeking yet.
+- Motion alarms are read directly from the NVR log and are not persisted by Peekaboo.
+  History is limited by the NVR's log retention.
+- Only `motionStart` / `motionStop` alarm subtypes are displayed. Other NVR alarm
+  subtypes are ignored.
+- Target labels depend on the NVR's localized log text. Unrecognized labels are shown
+  as generic motion, and ranges that cross the requested window are marked with an
+  estimated start or end.
 - RTSP playback URLs are credential-free. Opening one in VLC or another player
   requires the NVR username and password separately. SDK playback has no URL.
 - One global NVR credential pair for now.

@@ -34,6 +34,9 @@ hardening:
 - Use a long, unique `ADMIN_PASSWORD` and a dedicated NVR account.
 - Keep the SQLite data volume private; it contains password hashes, NVR addresses and
   camera names/IDs.
+- Motion alarm logs are fetched from the NVR on demand and are not persisted by
+  Peekaboo, but every authenticated user can read them. Alarm logs can reveal
+  occupancy and movement patterns.
 - For RTSP NVRs, recording search talks to the NVR's HTTP(S) ISAPI service. Peekaboo
   probes HTTP before HTTPS and only falls back to HTTPS when HTTP is unreachable, so
   disable the NVR's HTTP service (or block port 80) if you require HTTPS. Plain HTTP
