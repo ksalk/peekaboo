@@ -235,6 +235,45 @@ test('zooms and drags the recording timeline without starting playback', async (
   await expect(page.locator('.playback-video')).toHaveCount(0);
 });
 
+test('plays a recording from the motion tooltip', async ({ page, request }) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Motion tooltip'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await openPlayback(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  const day = localDateTime(new Date()).slice(0, 10);
+  await page.getByLabel('From', { exact: true }).fill(`${day} 00:00:00`);
+  await page.getByLabel('To', { exact: true }).fill(`${day} 02:00:00`);
+  await page.getByRole('button', { name: 'Search recordings' }).click();
+
+  const motion = page.locator('.playback-timeline-motion-range').first();
+  await expect(motion).toBeVisible();
+  await motion.hover();
+
+  const tooltip = page.locator('.floating-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('Person');
+
+  await expectConsumerCount(feeds.playback.path, 0);
+  await tooltip.getByRole('button', { name: 'Play', exact: true }).click();
+
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.playback-video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0.5);
+
+  await expectConsumerCount(feeds.playback.path, 1);
+});
+
 test('stops playback when the tab is hidden and resumes on return', async ({
   page,
   request,

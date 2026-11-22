@@ -1451,11 +1451,23 @@ button.feed-center:hover .feed-hint {
 
 .playback-timeline-motion-range {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  height: 8px;
   min-width: 2px;
+  padding: 0;
+  border: 0;
   border-radius: 3px;
   background: #94a3b8;
+  cursor: pointer;
+}
+
+.playback-timeline-motion-range:hover {
+  filter: brightness(1.2);
+}
+
+.playback-timeline-motion-range:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  z-index: 2;
 }
 
 .playback-timeline-motion-range.motion-human {

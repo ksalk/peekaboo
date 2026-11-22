@@ -41,6 +41,7 @@
     width: number;
     targets: string[];
     className: string;
+    lane: number;
   };
 
   type TooltipContent =
@@ -97,6 +98,9 @@
   const range = $derived(resolveRange(start, end, recordings, motionRanges));
   const items = $derived(layoutItems(recordings, range));
   const motionItems = $derived(layoutMotion(motionRanges, range));
+  const motionLaneCount = $derived(
+    Math.max(1, ...motionItems.map((item) => item.lane + 1)),
+  );
   const ticks = $derived(layoutTicks(range, zoom));
   const rangeLabel = $derived(formatRangeLabel(range));
   const activeKeys = $derived(resolveActiveKeys(items, selectedSegment));
@@ -457,7 +461,7 @@
       });
     }
 
-    return merged.map((item) => {
+    const items = merged.map((item) => {
       const left = clamp(
         ((item.startMs - currentRange.startMs) / currentRange.durationMs) * 100,
         0,
@@ -482,6 +486,20 @@
         targets,
         className: alignmentClass(targets),
       };
+    });
+
+    const laneEnds: number[] = [];
+    return items.map((item) => {
+      const gap = 15 * 60_000;
+      let lane = laneEnds.findIndex((endMs) => endMs + gap <= item.startMs);
+      if (lane < 0) {
+        lane = laneEnds.length;
+        laneEnds.push(item.endMs);
+      } else {
+        laneEnds[lane] = item.endMs;
+      }
+
+      return { ...item, lane };
     });
   }
 
@@ -528,8 +546,62 @@
   }
 
   function motionLabel(item: MotionItem): string {
-    return `Motion from ${formatClock(item.originalStartMs)} to ` +
-      `${formatClock(item.originalEndMs)}: ${motionTargetText(item.targets)}`;
+    return `Play recording for ${motionTargetText(item.targets)} alarm from ` +
+      `${formatClock(item.originalStartMs)} to ${formatClock(item.originalEndMs)}`;
+  }
+
+  function playableMotionSegment(item: MotionItem): RecordingSegment | null {
+    const alarmStart = item.originalStartMs;
+    const alarmEnd = item.originalEndMs;
+    const segments = recordings
+      .map((segment) => ({
+        segment,
+        start: parseTime(segment.start),
+        end: parseTime(segment.end),
+      }))
+      .filter(
+        (segment): segment is { segment: RecordingSegment; start: number; end: number } =>
+          segment.start !== null &&
+          segment.end !== null &&
+          segment.end > segment.start,
+      )
+      .sort((left, right) => left.start - right.start);
+
+    const candidate =
+      segments.find(
+        (segment) => segment.start <= alarmStart && segment.end > alarmStart,
+      ) ??
+      segments.find(
+        (segment) => segment.start < alarmEnd && segment.end > alarmStart,
+      );
+
+    if (!candidate) {
+      return null;
+    }
+
+    const start = Math.max(candidate.start, alarmStart - 5000);
+    if (start >= candidate.end) {
+      return null;
+    }
+
+    return {
+      ...candidate.segment,
+      start: new Date(start).toISOString(),
+      durationSeconds: Math.max(
+        0,
+        Math.round((candidate.end - start) / 1000),
+      ),
+    };
+  }
+
+  function playMotion(item: MotionItem) {
+    const segment = playableMotionSegment(item);
+    if (!segment) {
+      return;
+    }
+
+    hideTooltip();
+    onPlay(segment);
   }
 
   function layoutTicks(
@@ -705,6 +777,7 @@
         class="playback-timeline-motion-track"
         role="group"
         aria-label="Motion ranges timeline"
+        style={`height:${Math.max(18, motionLaneCount * 10 + 8)}px`}
       >
         {#each ticks as tick (tick.key)}
           <span
@@ -715,16 +788,31 @@
         {/each}
 
         {#each motionItems as item (item.key)}
-          <span
+          <button
             class="playback-timeline-motion-range {item.className}"
-            style={`left:${item.left}%;width:${item.width}%`}
+            type="button"
+            style={`left:${item.left}%;width:${item.width}%;top:${4 + item.lane * 10}px`}
             aria-label={motionLabel(item)}
-            role="img"
             onpointerenter={(event) =>
               showTooltip(event, { kind: 'motion', item })}
             onpointermove={moveTooltip}
             onpointerleave={scheduleHide}
-          ></span>
+            onfocus={(event) =>
+              showTooltipAtElement(event.currentTarget, { kind: 'motion', item })}
+            onblur={(event) => {
+              const next = event.relatedTarget;
+              if (next instanceof Element && next.closest('.floating-tooltip')) {
+                return;
+              }
+              scheduleHide();
+            }}
+            onclick={() => {
+              if (shouldSuppressClick()) {
+                return;
+              }
+              playMotion(item);
+            }}
+          ></button>
         {/each}
 
         {#if motionItems.length === 0}
@@ -801,7 +889,27 @@
   </div>
 
   {#if tooltip}
-    <FloatingTooltip x={tooltip.x} y={tooltip.y} above={tooltip.above}>
+    <FloatingTooltip
+      x={tooltip.x}
+      y={tooltip.y}
+      above={tooltip.above}
+      interactive={tooltip.kind === 'motion'}
+      onpointerenter={tooltip.kind === 'motion' ? cancelHide : null}
+      onpointerleave={tooltip.kind === 'motion' ? scheduleHide : null}
+      onfocusout={tooltip.kind === 'motion'
+        ? (event) => {
+            const current = event.currentTarget;
+            const next = event.relatedTarget;
+            if (
+              !(current instanceof HTMLElement) ||
+              !(next instanceof Node) ||
+              !current.contains(next)
+            ) {
+              scheduleHide();
+            }
+          }
+        : null}
+    >
       {#if tooltip.kind === 'recording'}
         <strong class="tooltip-time">
           {formatDateRange(tooltip.item.startMs, tooltip.item.endMs)}
@@ -814,22 +922,33 @@
         </span>
         <span class="tooltip-hint">Click to play</span>
       {:else}
+        {@const motion = tooltip.item}
         <strong class="tooltip-time">
-          {motionTargetText(tooltip.item.targets)}
+          {motionTargetText(motion.targets)}
         </strong>
         <span class="tooltip-row">
-          {formatDateRange(tooltip.item.originalStartMs, tooltip.item.originalEndMs)}
+          {formatDateRange(motion.originalStartMs, motion.originalEndMs)}
         </span>
         <span class="tooltip-row">
           {formatDuration(
             Math.max(
               0,
-              Math.round(
-                (tooltip.item.originalEndMs - tooltip.item.originalStartMs) / 1000,
-              ),
+              Math.round((motion.originalEndMs - motion.originalStartMs) / 1000),
             ),
           )}
         </span>
+        {@const segment = playableMotionSegment(motion)}
+        {#if segment}
+          <button
+            class="button small primary tooltip-link"
+            type="button"
+            onclick={() => playMotion(motion)}
+          >
+            Play
+          </button>
+        {:else}
+          <span class="tooltip-hint">No recording covers this alarm time</span>
+        {/if}
       {/if}
     </FloatingTooltip>
   {/if}
