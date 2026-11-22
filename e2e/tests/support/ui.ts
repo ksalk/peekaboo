@@ -15,6 +15,11 @@ export async function openPlayback(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Playback', exact: true })).toBeVisible();
 }
 
+export async function openAlarms(page: Page): Promise<void> {
+  await page.goto('/#/alarms');
+  await expect(page.getByRole('heading', { name: 'Alarms', exact: true })).toBeVisible();
+}
+
 export async function openNvrs(page: Page): Promise<void> {
   await page.goto('/#/config');
   await expect(page.getByRole('heading', { name: 'NVRs', exact: true })).toBeVisible();

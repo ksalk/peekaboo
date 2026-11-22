@@ -105,6 +105,87 @@ async function handle(request, response) {
     return;
   }
 
+  if (request.method === 'POST' && request.url === '/ISAPI/ContentMgmt/logSearch') {
+    const body = await readBody(request);
+    const metaId = body.match(/<metaId>(.*?)<\/metaId>/)?.[1];
+    const startValue = body.match(/<startTime>(.*?)<\/startTime>/)?.[1];
+    const endValue = body.match(/<endTime>(.*?)<\/endTime>/)?.[1];
+    const position = Number(
+      body.match(/<searchResultPostion>(\d+)<\/searchResultPostion>/)?.[1] ?? '0',
+    );
+
+    if (metaId !== 'log.std-cgi.com/Alarm') {
+      response.writeHead(400, { 'Content-Type': 'application/xml' });
+      response.end(
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+          '<ResponseStatus><statusCode>4</statusCode>' +
+          '<statusString>Invalid metaId</statusString></ResponseStatus>',
+      );
+      return;
+    }
+
+    response.writeHead(200, { 'Content-Type': 'application/xml' });
+
+    if (!startValue || !endValue) {
+      response.end(logResultXml('NO MATCHES', 0, []));
+      return;
+    }
+
+    const start = new Date(startValue);
+    const end = new Date(endValue);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      response.end(logResultXml('NO MATCHES', 0, []));
+      return;
+    }
+
+    const range = end.getTime() - start.getTime();
+    const midpoint = new Date(start.getTime() + range / 2);
+
+    if (position === 0) {
+      response.end(
+        logResultXml('MORE', 2, [
+          {
+            kind: 'motionStart',
+            time: midpoint,
+            channel: 1,
+            target: 'Osoba',
+          },
+          {
+            kind: 'motionStart',
+            time: new Date(midpoint.getTime() + 10_000),
+            channel: 1,
+            target: 'Pojazd',
+          },
+        ]),
+      );
+      return;
+    }
+
+    if (position === 2) {
+      response.end(
+        logResultXml('OK', 2, [
+          {
+            kind: 'motionStop',
+            time: new Date(midpoint.getTime() + 7_000),
+            channel: 1,
+            target: 'Osoba',
+          },
+          {
+            kind: 'motionStop',
+            time: new Date(midpoint.getTime() + 17_000),
+            channel: 1,
+            target: 'Pojazd',
+          },
+        ]),
+      );
+      return;
+    }
+
+    response.end(logResultXml('NO MATCHES', 0, []));
+    return;
+  }
+
   response.writeHead(404, { 'Content-Type': 'text/plain' });
   response.end('not found');
 }
@@ -131,6 +212,33 @@ function resultXml(trackId, status, numOfMatches, segments) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <CMSearchResult version="2.0" xmlns="http://www.isapi.com/ver20/XMLSchema">
   <searchID>{E2E-SEARCH}</searchID>
+  <responseStatus>true</responseStatus>
+  <responseStatusStrg>${status}</responseStatusStrg>
+  <numOfMatches>${numOfMatches}</numOfMatches>
+  <matchList>${matches}
+  </matchList>
+</CMSearchResult>`;
+}
+
+function logResultXml(status, numOfMatches, entries) {
+  const matches = entries
+    .map(
+      (entry) => `
+        <searchMatchItem>
+          <logDescriptor>
+            <metaId>log.hikvision.com/Alarm/${entry.kind}/${entry.channel}</metaId>
+            <StartDateTime>${formatTime(entry.time)}</StartDateTime>
+            <localId>D${entry.channel}</localId>
+            <localID>D${entry.channel}</localID>
+            <additionInformation>${entry.target}</additionInformation>
+          </logDescriptor>
+        </searchMatchItem>`,
+    )
+    .join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<CMSearchResult version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <searchID>{E2E-LOG-SEARCH}</searchID>
   <responseStatus>true</responseStatus>
   <responseStatusStrg>${status}</responseStatusStrg>
   <numOfMatches>${numOfMatches}</numOfMatches>
