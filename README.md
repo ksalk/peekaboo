@@ -165,9 +165,10 @@ docker compose up -d --build
 
 Open <http://localhost:8080> and sign in with the admin account from `.env`.
 
-The default image uses RTSP + ISAPI. To use the optional Hikvision SDK transport, copy
-the vendor SDK and set `PEEKABOO_DOCKER_TARGET=runtime-sdk`; see **Optional Hikvision
-SDK** under Development.
+The compose image uses RTSP + ISAPI by default. To use the optional Hikvision SDK
+transport, copy the vendor SDK and set `PEEKABOO_DOCKER_TARGET=runtime-sdk`; see
+**Optional Hikvision SDK** under Development. The `mise run docker:build` and
+`docker:publish` tasks always build the SDK-enabled `runtime-sdk` image.
 
 The initial admin is created **only while the database has no users**. Later
 `ADMIN_PASSWORD` changes do not reset it; use the Users page or delete the data
@@ -332,7 +333,7 @@ can change their own password under **Account**.
 | `PEEKABOO_HIK_SDK_RECONNECT_MS` | `10000` | SDK reconnect interval, 1–300000 ms. |
 | `PEEKABOO_HIK_SDK_LOG_LEVEL` | `0` | SDK file log level; `0` disables SDK logging. |
 | `PEEKABOO_HIK_SDK_LOG_DIR` | empty | Writable directory for SDK logs; set together with the log level. |
-| `PEEKABOO_DOCKER_TARGET` | `runtime` | Compose build target: `runtime` (no SDK) or `runtime-sdk` (private SDK image). |
+| `PEEKABOO_DOCKER_TARGET` | `runtime` | Compose build target: `runtime` (no SDK) or `runtime-sdk` (private SDK image). The `mise` docker tasks always build `runtime-sdk`. |
 | `PEEKABOO_TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. |
 | `PEEKABOO_FFMPEG_PATH` | `ffmpeg` | ffmpeg binary; mainly useful in development. |
 | `PEEKABOO_PORT` | `8080` | Host port published by `docker-compose.yml`. |
@@ -393,7 +394,7 @@ Useful tasks:
 | `mise run lint` | ESLint, svelte-check, and e2e type-check. |
 | `mise run e2e` | Full Playwright suite with synthetic authenticated RTSP feeds. |
 | `mise run test` | Backend tests, then e2e. |
-| `mise run docker:build` | Build the image tagged with `VERSION` for `PEEKABOO_REGISTRY`. |
+| `mise run docker:build` | Build the `runtime-sdk` image tagged with `VERSION` for `PEEKABOO_REGISTRY`. |
 | `mise run docker:publish` | Push that image. |
 | `mise run release` | Create the `v<version>` release tag from `VERSION`. |
 
@@ -416,7 +417,7 @@ mise run dev
 `LD_LIBRARY_PATH`. If you start the API by hand, do the same or the SDK's component
 libraries will fail to load.
 
-For the private Docker image, set the target in `.env` and rebuild:
+For the private Docker image, either let compose build the SDK target:
 
 ```env
 PEEKABOO_DOCKER_TARGET=runtime-sdk
@@ -425,6 +426,19 @@ PEEKABOO_DOCKER_TARGET=runtime-sdk
 ```bash
 docker compose build
 docker compose up -d --force-recreate
+```
+
+or use the publish tasks, which always build `runtime-sdk` and refuse to push an
+image without the SDK:
+
+```bash
+mise run docker:publish
+```
+
+On the deployment host, recreate the container so the new image is used:
+
+```bash
+docker compose pull && docker compose up -d --force-recreate
 ```
 
 The default `runtime` target contains no SDK and is the safe image for public builds.
@@ -460,7 +474,9 @@ in CI on GitHub-hosted Ubuntu with Google Chrome.
 Docker builds and pushes are intentionally local; CI only tests.
 
 Images are tagged with the contents of `VERSION` by default and carry OCI labels for
-the version and short Git revision.
+the version and short Git revision. The `mise` docker tasks build the private
+`runtime-sdk` target, so `vendor/hikvision` must contain the Hikvision SDK library;
+the build fails early if it does not.
 
 ```bash
 cp mise.local.example.toml mise.local.toml
@@ -469,6 +485,9 @@ cp mise.local.example.toml mise.local.toml
 docker login registry.example.com
 mise run docker:publish   # registry.example.com/peekaboo:0.1.0
 ```
+
+The publish task verifies that the image contains `PEEKABOO_HIK_SDK_PATH` before
+pushing, so an SDK-free image cannot be released by accident.
 
 Set `PEEKABOO_TAG` only when you deliberately want a different tag. See
 [docs/releasing.md](docs/releasing.md) for the release process and version policy.

@@ -70,27 +70,39 @@ depends = ["test:api"]
 run = "mise run e2e"
 
 [tasks."docker:build"]
-description = "Build the container image for PEEKABOO_REGISTRY"
+description = "Build the private Hikvision SDK container image for PEEKABOO_REGISTRY"
 run = '''
 : "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
+if [ ! -f vendor/hikvision/libhcnetsdk.so ]; then
+  echo "vendor/hikvision is missing the Hikvision SDK library." >&2
+  echo "Copy EN-HCNetSDKV*_linux64/lib/. into vendor/hikvision and retry." >&2
+  exit 1
+fi
 version="$(tr -d '[:space:]' < VERSION)"
 tag="${PEEKABOO_TAG:-$version}"
 image="${PEEKABOO_REGISTRY%/}/peekaboo:${tag}"
 docker build \
+  --target runtime-sdk \
   --build-arg APP_VERSION="$version" \
   --build-arg APP_REVISION="$(git rev-parse --short HEAD)" \
   --tag "$image" .
-echo "Built $image"
+echo "Built $image (runtime-sdk)"
 '''
 
 [tasks."docker:publish"]
-description = "Push the container image to PEEKABOO_REGISTRY"
+description = "Push the private Hikvision SDK image to PEEKABOO_REGISTRY"
 depends = ["docker:build"]
 run = '''
 : "${PEEKABOO_REGISTRY:?Set PEEKABOO_REGISTRY in mise.local.toml or the environment}"
 version="$(tr -d '[:space:]' < VERSION)"
 tag="${PEEKABOO_TAG:-$version}"
 image="${PEEKABOO_REGISTRY%/}/peekaboo:${tag}"
+if ! docker image inspect "$image" | grep -q '"PEEKABOO_HIK_SDK_PATH='; then
+  echo "Refusing to publish $image: it has no PEEKABOO_HIK_SDK_PATH, so live" >&2
+  echo "streams would fail with \"The Hikvision SDK is not configured\". Rebuild" >&2
+  echo "with: mise run docker:build" >&2
+  exit 1
+fi
 docker push "$image"
 echo "Published $image"
 '''
