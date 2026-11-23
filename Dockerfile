@@ -41,7 +41,15 @@ LABEL org.opencontainers.image.title="Peekaboo" \
 
 WORKDIR /app
 
-RUN apt-get update \
+# The base image points apt at plain-HTTP archive.ubuntu.com mirrors. Some
+# networks throttle or blackhole port 80 to Canonical while HTTPS works, which
+# leaves apt (and the whole build) stalled for many minutes. Use HTTPS and keep
+# retries/timeouts bounded so a bad mirror fails the layer instead of hanging.
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30 \
+              update \
     && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg libuuid1 \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data \
