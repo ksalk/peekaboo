@@ -291,7 +291,7 @@ written to SQLite.
 
 1. Add NVRs and cameras under **NVRs**. The NVR time zone is detected automatically;
    set an IANA override there if recordings are shifted.
-2. Open **Feeds**, choose a grid layout, and click a cell to pick a camera.
+2. Open **Live**, choose a grid layout, and click a cell to pick a camera.
 3. Press **Start** in the cell. Use **Sub/Main** to change quality, and **Stop** when
    you are done.
 4. Use **Stop all** to release every stream at once.

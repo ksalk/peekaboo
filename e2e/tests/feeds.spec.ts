@@ -211,8 +211,8 @@ test('navigating away and signing out stop streams', async ({ page, request }) =
   await expect(page.getByRole('heading', { name: 'NVRs', exact: true })).toBeVisible();
   await expectConsumerCount(feeds.sub.path, 0);
 
-  await page.getByRole('link', { name: 'Feeds', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+  await page.getByRole('link', { name: 'Live', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
   await expect(feedCell(page, 0).getByRole('button', { name: 'Start', exact: true })).toBeVisible();
 
   await startCell(page, 0);
@@ -237,7 +237,7 @@ test('layout and cell assignments persist across reloads', async ({ page, reques
   await assignCamera(page, 1, camera.name);
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
   await expect(page.locator('.feed-cell')).toHaveCount(4);
   await expect(feedCell(page, 1).locator('.feed-name')).toHaveText(camera.name);
   await expect(feedCell(page, 1).getByRole('button', { name: 'Start', exact: true })).toBeVisible();

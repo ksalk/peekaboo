@@ -75,7 +75,7 @@
         </a>
 
         <nav class="main-nav" aria-label="Main navigation">
-          <a href="#/feeds" class:active={route === 'feeds'}>Feeds</a>
+          <a href="#/feeds" class:active={route === 'feeds'}>Live</a>
           <a href="#/playback" class:active={route === 'playback'}>Playback</a>
           <a href="#/alarms" class:active={route === 'alarms'}>Alarms</a>
           <a href="#/config" class:active={route === 'config'}>NVRs</a>

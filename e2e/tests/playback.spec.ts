@@ -469,7 +469,7 @@ test('stops playback on navigation and remembers the selected camera', async ({
   await segment.click();
   await expectConsumerCount(feeds.playback.path, 1);
 
-  await page.getByRole('link', { name: 'Feeds', exact: true }).click();
+  await page.getByRole('link', { name: 'Live', exact: true }).click();
   await expectConsumerCount(feeds.playback.path, 0);
 
   await openPlayback(page);

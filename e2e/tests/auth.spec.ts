@@ -16,7 +16,7 @@ test('rejects invalid credentials and signs in with valid ones', async ({ page }
   await page.getByLabel('Password', { exact: true }).fill(adminPassword);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
 });
 
 test('viewer accounts cannot open user management', async ({ page, request }) => {
@@ -31,11 +31,11 @@ test('viewer accounts cannot open user management', async ({ page, request }) =>
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
 
-    await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
 
     await page.goto('/#/users');
-    await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
     await expect(page).toHaveURL(/#\/feeds/);
   } finally {
     await deleteUser(request, viewer.id);

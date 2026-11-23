@@ -180,7 +180,7 @@
 <section class="page">
   <div class="page-header">
     <div>
-      <h1>Feeds</h1>
+      <h1>Live</h1>
       <p class="muted">Streams only run while you are watching them.</p>
     </div>
 

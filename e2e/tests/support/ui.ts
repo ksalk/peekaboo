@@ -7,7 +7,7 @@ export function feedCell(page: Page, index: number) {
 
 export async function openFeeds(page: Page): Promise<void> {
   await page.goto('/#/feeds');
-  await expect(page.getByRole('heading', { name: 'Feeds' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
 }
 
 export async function openPlayback(page: Page): Promise<void> {
