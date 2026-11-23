@@ -59,6 +59,8 @@
   let selectedSegment = $state<RecordingSegment | null>(null);
   let playerStatus = $state<PlayerStatus>('idle');
   let playerError = $state('');
+  let hasAudio = $state(false);
+  let audioEnabled = $state(false);
   let jumpOffset = $state(0);
   let copyState = $state<'copied' | 'failed' | null>(null);
   let videoElement = $state<HTMLVideoElement>();
@@ -520,10 +522,30 @@
           playerStatus = 'ended';
         }
       },
+      onAudioAvailable: (available) => {
+        if (player === instance) {
+          hasAudio = available;
+          if (!available) {
+            audioEnabled = false;
+          }
+        }
+      },
     });
 
     player = instance;
     instance.startPlayback(cameraId, effective.start, effective.end);
+  }
+
+  function toggleAudio() {
+    const next = !audioEnabled;
+    audioEnabled = next;
+    player?.setAudioEnabled(next);
+  }
+
+  function handleVolumeChange() {
+    if (videoElement) {
+      audioEnabled = !videoElement.muted;
+    }
   }
 
   function stopPlayback() {
@@ -533,6 +555,8 @@
     selectedSegment = null;
     playerStatus = 'idle';
     playerError = '';
+    hasAudio = false;
+    audioEnabled = false;
     copyState = null;
   }
 
@@ -737,6 +761,19 @@
           </div>
 
           <div class="actions">
+            {#if hasAudio && (playerStatus === 'connecting' || playerStatus === 'playing')}
+              <button
+                class="button small audio-toggle"
+                type="button"
+                aria-label={audioEnabled
+                  ? 'Mute recording playback'
+                  : 'Enable sound for recording playback'}
+                aria-pressed={audioEnabled}
+                onclick={toggleAudio}
+              >
+                Sound
+              </button>
+            {/if}
             {#if selectedSegment.playbackUrl}
               <button class="button small" type="button" onclick={() => void copyUrl()}>
                 {copyState === 'copied'
@@ -770,6 +807,7 @@
             muted
             playsinline
             aria-label="Recording playback"
+            onvolumechange={handleVolumeChange}
           ></video>
 
           {#if playerStatus === 'connecting'}

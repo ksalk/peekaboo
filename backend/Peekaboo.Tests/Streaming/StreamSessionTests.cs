@@ -53,6 +53,59 @@ public sealed class StreamSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task Rtsp_arguments_request_optional_aac_audio()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var argsPath = Path.Combine(_directory, "rtsp-args.txt");
+        var script = CreateScript(
+            $"printf '%s\\n' \"$@\" > \"{argsPath}\"\nexec sleep 300");
+        var session = CreateSession(script, onTerminated: null);
+
+        session.Start();
+        await WaitForFileLengthAsync(argsPath, 1);
+
+        var arguments = await File.ReadAllLinesAsync(argsPath);
+        Assert.Contains("0:a:0?", arguments);
+        Assert.Contains("aac", arguments);
+        Assert.Contains("aac_low", arguments);
+        Assert.Contains("48000", arguments);
+        Assert.DoesNotContain("-an", arguments);
+
+        await session.StopAsync(errorMessage: null);
+    }
+
+    [Fact]
+    public async Task Rtsp_audio_fallback_arguments_disable_audio()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var argsPath = Path.Combine(_directory, "rtsp-video-args.txt");
+        var script = CreateScript(
+            $"printf '%s\\n' \"$@\" > \"{argsPath}\"\nexec sleep 300");
+        var session = CreateSession(
+            script,
+            onTerminated: null,
+            key: StreamKey.Live("camera", CameraStream.Sub, audioEnabled: false));
+
+        session.Start();
+        await WaitForFileLengthAsync(argsPath, 1);
+
+        var arguments = await File.ReadAllLinesAsync(argsPath);
+        Assert.Contains("-an", arguments);
+        Assert.DoesNotContain("0:a:0?", arguments);
+        Assert.DoesNotContain("aac", arguments);
+
+        await session.StopAsync(errorMessage: null);
+    }
+
+    [Fact]
     public async Task Sdk_input_is_piped_to_ffmpeg_stdin()
     {
         if (OperatingSystem.IsWindows())
@@ -80,6 +133,7 @@ public sealed class StreamSessionTests : IDisposable
         var arguments = await File.ReadAllLinesAsync(argsPath);
         Assert.Contains("mpeg", arguments);
         Assert.Contains("pipe:0", arguments);
+        Assert.Contains("-an", arguments);
         Assert.Contains(arguments, argument => argument.Contains("frag_keyframe", StringComparison.Ordinal));
         Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
 

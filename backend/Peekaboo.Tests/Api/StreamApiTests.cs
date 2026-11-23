@@ -137,6 +137,28 @@ public sealed class StreamApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Audio_query_false_starts_video_only_ffmpeg()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost();
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie, audio: false);
+
+        await ReceiveReadyAsync(socket);
+
+        var arguments = (await WaitForArgsAsync())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("-an", arguments);
+        Assert.DoesNotContain("0:a:0?", arguments);
+
+        await CloseQuietlyAsync(socket);
+    }
+
+    [Fact]
     public async Task Two_viewers_share_one_ffmpeg_process_and_stop_after_the_last_leaves()
     {
         if (OperatingSystem.IsWindows())
@@ -721,10 +743,15 @@ public sealed class StreamApiTests : IDisposable
         ApiTestHost host,
         string cameraId,
         string cookie,
-        string? stream = null)
+        string? stream = null,
+        bool audio = true)
     {
         var client = CreateWebSocketClient(host, cookie);
         var query = stream is null ? string.Empty : $"?stream={Uri.EscapeDataString(stream)}";
+        if (!audio)
+        {
+            query += query.Length == 0 ? "?audio=0" : "&audio=0";
+        }
 
         return await client.ConnectAsync(
             new Uri($"ws://localhost/api/cameras/{cameraId}/stream{query}"),

@@ -37,4 +37,14 @@ public sealed class StreamKeyTests
         Assert.Equal(first, second);
         Assert.Equal(first.GetHashCode(), second.GetHashCode());
     }
+
+    [Fact]
+    public void Video_only_fallback_uses_a_distinct_key()
+    {
+        var audio = StreamKey.Live("camera-1", CameraStream.Main);
+        var video = StreamKey.Live("camera-1", CameraStream.Main, audioEnabled: false);
+
+        Assert.NotEqual(audio, video);
+        Assert.Equal("camera-1:main:video", video.ToString());
+    }
 }

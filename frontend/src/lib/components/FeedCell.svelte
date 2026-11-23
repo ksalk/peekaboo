@@ -20,6 +20,8 @@
   let activeCameraId: string | null = null;
   let seenStopSignal = 0;
   let stream = $state<CameraStream>('sub');
+  let hasAudio = $state(false);
+  let audioEnabled = $state(false);
 
   $effect(() => {
     if (stopSignal !== seenStopSignal) {
@@ -73,6 +75,14 @@
           errorMessage = message;
         }
       },
+      onAudioAvailable: (available) => {
+        if (player === instance) {
+          hasAudio = available;
+          if (!available) {
+            audioEnabled = false;
+          }
+        }
+      },
     });
 
     player = instance;
@@ -92,11 +102,19 @@
     }
   }
 
+  function toggleAudio() {
+    const next = !audioEnabled;
+    audioEnabled = next;
+    player?.setAudioEnabled(next);
+  }
+
   function stop() {
     player?.stop();
     player = null;
     status = 'idle';
     errorMessage = '';
+    hasAudio = false;
+    audioEnabled = false;
     activeCameraId = camera?.id ?? null;
   }
 </script>
@@ -140,6 +158,19 @@
               Main
             </button>
           </div>
+
+          {#if hasAudio && (status === 'connecting' || status === 'playing')}
+            <button
+              type="button"
+              class="button small ghost audio-toggle"
+              aria-label={audioEnabled ? `Mute ${camera.name}` : `Enable sound for ${camera.name}`}
+              aria-pressed={audioEnabled}
+              title={audioEnabled ? 'Mute' : 'Enable sound'}
+              onclick={toggleAudio}
+            >
+              Sound
+            </button>
+          {/if}
 
           {#if status === 'playing'}
             <span class="live-badge"><span class="live-dot" aria-hidden="true"></span>Live</span>

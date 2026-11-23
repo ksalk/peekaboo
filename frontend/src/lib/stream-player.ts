@@ -4,15 +4,22 @@ interface StreamPlayerCallbacks {
   onPlaying: () => void;
   onError: (message: string) => void;
   onEnded?: () => void;
+  onAudioAvailable?: (available: boolean) => void;
 }
 
 interface StreamMessage {
   type?: string;
   codec?: string;
+  audioCodec?: string | null;
   message?: string;
 }
 
 const BOX_HEADER_LENGTH = 8;
+
+// Fragments are emitted at video keyframes, so a healthy source's gap can equal
+// its GOP. Keep this below the server's 30s live idle watchdog while still
+// covering long Hikvision GOPs.
+const MEDIA_STALL_TIMEOUT_MS = 20_000;
 
 function boxType(buffer: ArrayBuffer): string {
   if (buffer.byteLength < BOX_HEADER_LENGTH) {
@@ -39,6 +46,10 @@ export class StreamPlayer {
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
   private objectUrl: string | null = null;
+  private hasAudio = false;
+  private audioRequested = true;
+  private buildUrl: ((audio: boolean) => string) | null = null;
+  private mediaWatchdog: number | null = null;
   private queue: ArrayBuffer[] = [];
   private pendingMoof: ArrayBuffer | null = null;
   private appending = false;
@@ -52,25 +63,55 @@ export class StreamPlayer {
 
   start(cameraId: string, stream: CameraStream): void {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.connect(
+    this.buildUrl = (audio) =>
       `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/stream` +
-        `?stream=${encodeURIComponent(stream)}`,
-    );
+      `?stream=${encodeURIComponent(stream)}${audio ? '' : '&audio=0'}`;
+    this.begin();
   }
 
   startPlayback(cameraId: string, start: string, end: string): void {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.connect(
+    this.buildUrl = (audio) =>
       `${protocol}//${window.location.host}/api/cameras/${encodeURIComponent(cameraId)}/recordings/stream` +
-        `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
-    );
+      `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+      `${audio ? '' : '&audio=0'}`;
+    this.begin();
+  }
+
+  private begin(): void {
+    this.audioRequested = true;
+    const url = this.buildUrl?.(true);
+    if (!url) {
+      this.fail('The stream URL could not be built.');
+      return;
+    }
+
+    this.connect(url);
+  }
+
+  setAudioEnabled(enabled: boolean): void {
+    if (this.stopped || this.failed) {
+      return;
+    }
+
+    const next = enabled && this.hasAudio;
+    this.video.muted = !next;
+
+    if (next && this.video.paused) {
+      void this.video.play().catch(() => {
+        // The viewer can press play again if the browser rejects the resume.
+      });
+    }
   }
 
   private connect(url: string): void {
+    this.clearMediaWatchdog();
     this.stopped = false;
     this.failed = false;
+    this.hasAudio = false;
     this.video.muted = true;
     this.video.playsInline = true;
+    this.video.removeEventListener('playing', this.handlePlaying);
     this.video.addEventListener('playing', this.handlePlaying);
 
     if (typeof MediaSource === 'undefined') {
@@ -99,6 +140,7 @@ export class StreamPlayer {
 
   stop(): void {
     this.stopped = true;
+    this.clearMediaWatchdog();
     this.video.removeEventListener('playing', this.handlePlaying);
 
     const socket = this.socket;
@@ -110,6 +152,41 @@ export class StreamPlayer {
       socket.close(1000, 'Stopped by viewer');
     }
 
+    this.detachMediaSource();
+    this.video.muted = true;
+    this.audioRequested = true;
+    this.buildUrl = null;
+  }
+
+  private fallbackWithoutAudio(): void {
+    if (this.stopped || this.failed || !this.audioRequested) {
+      return;
+    }
+
+    this.audioRequested = false;
+    this.clearMediaWatchdog();
+    this.detachMediaSource();
+    this.callbacks.onAudioAvailable?.(false);
+
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onmessage = null;
+      socket.close(1000, 'Audio unavailable');
+    }
+
+    const url = this.buildUrl?.(false);
+    if (!url) {
+      this.fail('The stream could not be restarted without audio.');
+      return;
+    }
+
+    this.connect(url);
+  }
+
+  private detachMediaSource(): void {
     try {
       this.sourceBuffer?.abort();
     } catch {
@@ -135,8 +212,35 @@ export class StreamPlayer {
     this.objectUrl = null;
     this.mediaSource = null;
     this.sourceBuffer = null;
+    this.hasAudio = false;
     this.queue = [];
     this.pendingMoof = null;
+    this.appending = false;
+  }
+
+  private armMediaWatchdog(): void {
+    this.clearMediaWatchdog();
+    if (!this.hasAudio || this.stopped || this.failed) {
+      return;
+    }
+
+    this.mediaWatchdog = window.setTimeout(() => {
+      this.mediaWatchdog = null;
+      this.fallbackWithoutAudio();
+    }, MEDIA_STALL_TIMEOUT_MS);
+  }
+
+  private resetMediaWatchdog(): void {
+    if (this.hasAudio) {
+      this.armMediaWatchdog();
+    }
+  }
+
+  private clearMediaWatchdog(): void {
+    if (this.mediaWatchdog !== null) {
+      window.clearTimeout(this.mediaWatchdog);
+      this.mediaWatchdog = null;
+    }
   }
 
   private readonly handlePlaying = () => {
@@ -154,7 +258,7 @@ export class StreamPlayer {
       try {
         const message = JSON.parse(event.data) as StreamMessage;
         if (message.type === 'ready' && message.codec) {
-          this.setupMediaSource(message.codec);
+          this.setupMediaSource(message.codec, message.audioCodec ?? null);
         } else if (message.type === 'error') {
           this.fail(message.message ?? 'The camera stream failed.');
         } else if (message.type === 'ended') {
@@ -176,6 +280,9 @@ export class StreamPlayer {
 
   private handleSegment(segment: ArrayBuffer): void {
     const type = boxType(segment);
+    if (type === 'moof' || type === 'mdat') {
+      this.resetMediaWatchdog();
+    }
 
     if (type === 'moof') {
       if (this.pendingMoof) {
@@ -202,15 +309,31 @@ export class StreamPlayer {
     this.pump();
   }
 
-  private setupMediaSource(codec: string): void {
+  private setupMediaSource(codec: string, audioCodec: string | null): void {
     if (this.mediaSource) {
       return;
     }
 
-    const mime = `video/mp4; codecs="${codec}"`;
+    if (!this.audioRequested) {
+      audioCodec = null;
+    }
+
+    const codecs = audioCodec ? `${codec},${audioCodec}` : codec;
+    const mime = `video/mp4; codecs="${codecs}"`;
     if (!MediaSource.isTypeSupported(mime)) {
-      this.fail(`This browser cannot play the camera codec (${codec}).`);
+      if (audioCodec) {
+        this.fallbackWithoutAudio();
+        return;
+      }
+
+      this.fail(`This browser cannot play the camera codec (${codecs}).`);
       return;
+    }
+
+    this.hasAudio = audioCodec !== null;
+    this.callbacks.onAudioAvailable?.(this.hasAudio);
+    if (this.hasAudio) {
+      this.armMediaWatchdog();
     }
 
     const mediaSource = new MediaSource();
@@ -229,7 +352,7 @@ export class StreamPlayer {
           const sourceBuffer = mediaSource.addSourceBuffer(mime);
           sourceBuffer.addEventListener('updateend', this.handleUpdateEnd);
           sourceBuffer.addEventListener('error', () =>
-            this.fail('Playback failed while buffering video.'),
+            this.fail('Playback failed while buffering the stream.'),
           );
           this.sourceBuffer = sourceBuffer;
           void this.video.play().catch(() => {
@@ -237,7 +360,7 @@ export class StreamPlayer {
           });
           this.pump();
         } catch {
-          this.fail(`This browser cannot play the camera codec (${codec}).`);
+          this.fail(`This browser cannot play the camera codec (${codecs}).`);
         }
       },
       { once: true },
@@ -313,6 +436,7 @@ export class StreamPlayer {
     // Keep the MediaSource and <video> attached so the last buffered frames can
     // finish playing. stop() performs the final cleanup.
     this.stopped = true;
+    this.clearMediaWatchdog();
     this.video.removeEventListener('playing', this.handlePlaying);
 
     const socket = this.socket;
@@ -341,6 +465,7 @@ export class StreamPlayer {
     }
 
     this.failed = true;
+    this.clearMediaWatchdog();
     this.video.removeEventListener('playing', this.handlePlaying);
 
     const socket = this.socket;

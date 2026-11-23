@@ -70,6 +70,13 @@ test('searches, copies, and plays a recording', async ({ page, context, request 
   await expect(page.locator('.playback-video')).toHaveJSProperty('controls', true);
   await expect(page.locator('.playback-jump')).toBeVisible();
 
+  const soundButton = page.getByRole('button', {
+    name: 'Enable sound for recording playback',
+  });
+  await expect(soundButton).toBeVisible();
+  await soundButton.click();
+  await expect(page.locator('.playback-video')).toHaveJSProperty('muted', false);
+
   await page.getByRole('button', { name: 'Copy stream URL' }).click();
   await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
 

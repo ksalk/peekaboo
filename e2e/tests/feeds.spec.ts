@@ -33,10 +33,49 @@ test('plays video only after Start and kills the server stream on Stop', async (
   await waitForPlaying(page, 0);
   await expectPixelsChanging(page, 0);
   await expectConsumerCount(feeds.sub.path, 1);
+  await expect(
+    feedCell(page, 0).getByRole('button', { name: /sound/i }),
+  ).toHaveCount(0);
 
   await stopCell(page, 0);
   await expectConsumerCount(feeds.sub.path, 0);
   await expect(feedCell(page, 0).locator('video')).not.toHaveAttribute('src', /.+/);
+});
+
+test('unmutes an audio camera and decodes audio', async ({ page, request }) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Audio camera'),
+    '301',
+    feeds.second.streamId,
+  );
+
+  await openFeeds(page);
+  await assignCamera(page, 0, camera.name);
+  await startCell(page, 0);
+  await waitForPlaying(page, 0);
+
+  const cell = feedCell(page, 0);
+  const soundButton = cell.getByRole('button', { name: /Enable sound/ });
+  await expect(soundButton).toBeVisible();
+  await soundButton.click();
+
+  const video = cell.locator('video');
+  await expect(video).toHaveJSProperty('muted', false);
+  // Playwright is pinned to Chrome/Chromium here; this decoded-audio counter is
+  // Chromium-specific.
+  await expect
+    .poll(
+      () =>
+        video.evaluate(
+          (element: HTMLVideoElement & { webkitAudioDecodedByteCount?: number }) =>
+            element.webkitAudioDecodedByteCount ?? 0,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0);
+
+  await stopCell(page, 0);
 });
 
 test('switches a live cell between sub and main streams', async ({ page, request }) => {

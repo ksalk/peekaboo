@@ -33,6 +33,18 @@ internal readonly record struct StreamMessage(
     public static StreamMessage Ended() => new(StreamMessageKind.Ended);
 }
 
+internal static class StreamQuery
+{
+    /// <summary>
+    /// Audio is enabled by default. The web client reconnects with audio=0 when a
+    /// mapped audio stream stalls the muxer and video never reaches the browser.
+    /// </summary>
+    public static bool IsAudioEnabled(string? value) =>
+        !string.Equals(value, "0", StringComparison.Ordinal) &&
+        !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
+}
+
 internal sealed class SlowConsumerException : Exception;
 
 internal sealed class StreamStartException(string message) : Exception(message);

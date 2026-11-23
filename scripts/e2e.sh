@@ -102,9 +102,22 @@ start_feed() {
   local log="$3"
   local width="${4:-640}"
   local height="${5:-360}"
+  local audio="${6:-0}"
+  local audio_args=()
+
+  if [ "$audio" = "1" ]; then
+    audio_args=(
+      -re -f lavfi -i "sine=frequency=440:sample_rate=48000"
+      -map 0:v:0 -map 1:a:0
+      -c:a pcm_mulaw -ar 8000 -ac 1
+    )
+  else
+    audio_args=(-an)
+  fi
 
   ffmpeg -hide_banner -loglevel warning -re \
     -f lavfi -i "testsrc2=size=${width}x${height}:rate=15" \
+    "${audio_args[@]}" \
     -vf "hue=h=${hue}" \
     -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -pix_fmt yuv420p \
     -rtsp_transport tcp -f rtsp \
@@ -133,9 +146,9 @@ start_feed "ISAPI/Streaming/channels/101" 0 "$temp_dir/feed1.log" 640 360
 feed1_pid="$last_pid"
 start_feed "ISAPI/Streaming/channels/102" 120 "$temp_dir/feed2.log" 320 180
 feed2_pid="$last_pid"
-start_feed "ISAPI/Streaming/channels/201" 240 "$temp_dir/feed3.log" 640 360
+start_feed "ISAPI/Streaming/channels/201" 240 "$temp_dir/feed3.log" 640 360 1
 feed3_pid="$last_pid"
-start_feed "ISAPI/Streaming/tracks/101" 300 "$temp_dir/playback-feed.log" 640 360
+start_feed "ISAPI/Streaming/tracks/101" 300 "$temp_dir/playback-feed.log" 640 360 1
 playback_feed_pid="$last_pid"
 
 if ! wait_for_feed "ISAPI/Streaming/channels/101" ||

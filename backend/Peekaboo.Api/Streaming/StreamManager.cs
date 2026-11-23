@@ -5,27 +5,41 @@ namespace Peekaboo.Api.Streaming;
 
 /// <summary>
 /// Identifies a stream session. <see cref="Kind"/> must be one of the canonical
-/// <see cref="StreamKinds"/> values (or a playback kind); keys are compared by
-/// exact string equality so sharing and the stream limit stay consistent.
+/// <see cref="StreamKinds"/> values (or a playback kind). <see cref="AudioEnabled"/>
+/// participates in identity: an audio session and a video-only fallback for the
+/// same camera and kind are distinct sessions, so sharing and the stream limit
+/// treat them separately. <see cref="ToString"/> appends ":video" for the fallback.
 /// </summary>
-public readonly record struct StreamKey(string CameraId, string Kind)
+public readonly record struct StreamKey(
+    string CameraId,
+    string Kind,
+    bool AudioEnabled = true)
 {
-    public static StreamKey Live(string cameraId, CameraStream stream) =>
+    public static StreamKey Live(
+        string cameraId,
+        CameraStream stream,
+        bool audioEnabled = true) =>
         new(
             cameraId,
-            stream == CameraStream.Main ? StreamKinds.Main : StreamKinds.Sub);
+            stream == CameraStream.Main ? StreamKinds.Main : StreamKinds.Sub,
+            audioEnabled);
 
     public static StreamKey Playback(
         string cameraId,
         DateTimeOffset start,
-        DateTimeOffset end) =>
+        DateTimeOffset end,
+        bool audioEnabled = true) =>
         new(
             cameraId,
-            $"{StreamKinds.PlaybackPrefix}{start.UtcTicks}-{end.UtcTicks}");
+            $"{StreamKinds.PlaybackPrefix}{start.UtcTicks}-{end.UtcTicks}",
+            audioEnabled);
 
     public bool IsPlayback => Kind.StartsWith(StreamKinds.PlaybackPrefix, StringComparison.Ordinal);
 
-    public override string ToString() => string.Concat(CameraId, ":", Kind);
+    public override string ToString() =>
+        AudioEnabled
+            ? string.Concat(CameraId, ":", Kind)
+            : string.Concat(CameraId, ":", Kind, ":video");
 }
 
 public sealed class StreamManager(

@@ -43,6 +43,9 @@ public static class StreamEndpoints
             return;
         }
 
+        var audioEnabled = StreamQuery.IsAudioEnabled(
+            context.Request.Query["audio"]);
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -53,7 +56,7 @@ public static class StreamEndpoints
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
 
         await streams.RunAsync(
-            StreamKey.Live(target.CameraId, target.Stream),
+            StreamKey.Live(target.CameraId, target.Stream, audioEnabled),
             () =>
             {
                 var current = cameras.GetStreamTarget(id, cameraStream);

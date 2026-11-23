@@ -61,6 +61,9 @@ public static class PlaybackEndpoints
             return;
         }
 
+        var audioEnabled = StreamQuery.IsAudioEnabled(
+            context.Request.Query["audio"]);
+
         if (!context.WebSockets.IsWebSocketRequest)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -71,7 +74,7 @@ public static class PlaybackEndpoints
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
 
         await streams.RunAsync(
-            StreamKey.Playback(id, from, to),
+            StreamKey.Playback(id, from, to, audioEnabled),
             () => playbacks.GetStreamSource(id, from, to, timeZone),
             socket,
             cancellationToken);

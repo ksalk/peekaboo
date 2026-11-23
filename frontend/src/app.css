@@ -1100,6 +1100,12 @@ input[type='checkbox'] {
   pointer-events: auto;
 }
 
+.button.audio-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .live-badge {
   display: inline-flex;
   align-items: center;
