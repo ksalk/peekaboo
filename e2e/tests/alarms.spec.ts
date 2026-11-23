@@ -79,6 +79,81 @@ test('shows NVR motion alarms on the Alarms page and playback timeline', async (
   await expectConsumerCount(feeds.playback.path, 0);
 });
 
+test('collapses a dense alarm burst into one bounded timeline bar', async ({
+  page,
+  request,
+}) => {
+  const camera = await createCameraFixture(
+    request,
+    uniqueName('Alarm density'),
+    feeds.main.streamId,
+    feeds.sub.streamId,
+  );
+
+  await page.route(/\/api\/alarms\?/, async (route) => {
+    const url = new URL(route.request().url());
+    const requestedStart = Date.parse(url.searchParams.get('start') ?? '');
+    const requestedEnd = Date.parse(url.searchParams.get('end') ?? '');
+    const fallbackEnd = Date.now();
+    const rangeStart = Number.isFinite(requestedStart)
+      ? requestedStart
+      : fallbackEnd - 60 * 60_000;
+    const rangeEnd =
+      Number.isFinite(requestedEnd) && requestedEnd > rangeStart
+        ? requestedEnd
+        : fallbackEnd;
+    const span = rangeEnd - rangeStart;
+    const step = Math.max(1, (span * 0.4) / 115);
+    const alarmDuration = Math.max(1, Math.min(5_000, step));
+    const burstStart = rangeStart + span * 0.3;
+
+    const ranges = Array.from({ length: 115 }, (_, index) => {
+      const start = new Date(burstStart + index * step);
+      const end = new Date(start.getTime() + alarmDuration);
+
+      return {
+        cameraId: camera.id,
+        cameraName: camera.name,
+        nvrId: camera.nvrId,
+        nvrName: camera.nvrName,
+        channelId: 1,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        durationSeconds: Math.max(1, Math.round(alarmDuration / 1000)),
+        target: 'human',
+        targetLabel: 'Osoba',
+        inferredStart: false,
+        inferredEnd: false,
+      };
+    });
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        start: new Date(rangeStart).toISOString(),
+        end: new Date(rangeEnd).toISOString(),
+        truncated: false,
+        ranges,
+        errors: [],
+      }),
+    });
+  });
+
+  await openAlarms(page);
+  await page.getByLabel('Camera').selectOption(camera.id);
+  await page.getByRole('button', { name: 'Search alarms' }).click();
+
+  await expect(page.locator('.alarm-bar')).toHaveCount(1);
+  await expect(page.locator('.alarm-track').first()).toHaveCSS('height', '26px');
+  await expect(page.locator('.alarm-summary')).toContainText('115 motion ranges');
+
+  await page.locator('.alarm-bar').first().hover();
+  const tooltip = page.locator('.floating-tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('115 alarms');
+});
+
 test('validates filters and clears stale alarm results', async ({ page, request }) => {
   const camera = await createCameraFixture(
     request,

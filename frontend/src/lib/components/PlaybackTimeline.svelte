@@ -8,7 +8,13 @@
     formatTimelineTick,
   } from '../date-time';
   import { formatDuration, parseTime, segmentsOverlap } from '../playback-utils';
-  import type { AlarmRange, RecordingSegment } from '../types';
+  import {
+    layoutTimeline,
+    timelineClusterGapMs,
+    type TimelineCluster,
+    type TimelineEntry,
+  } from '../timeline-layout';
+  import type { AlarmRange, AlarmTarget, RecordingSegment } from '../types';
 
   type TimelineRange = {
     startMs: number;
@@ -31,17 +37,8 @@
     label: string;
   };
 
-  type MotionItem = {
-    key: string;
-    startMs: number;
-    endMs: number;
-    originalStartMs: number;
-    originalEndMs: number;
-    left: number;
-    width: number;
-    targets: string[];
+  type MotionItem = TimelineCluster<AlarmRange> & {
     className: string;
-    lane: number;
   };
 
   type TooltipContent =
@@ -97,7 +94,13 @@
 
   const range = $derived(resolveRange(start, end, recordings, motionRanges));
   const items = $derived(layoutItems(recordings, range));
-  const motionItems = $derived(layoutMotion(motionRanges, range));
+  const motionItems = $derived(
+    layoutMotion(
+      motionRanges,
+      range,
+      timelineClusterGapMs(range.durationMs, zoom),
+    ),
+  );
   const motionLaneCount = $derived(
     Math.max(1, ...motionItems.map((item) => item.lane + 1)),
   );
@@ -388,165 +391,60 @@
   function layoutMotion(
     alarms: AlarmRange[],
     currentRange: TimelineRange,
+    gapMs: number,
   ): MotionItem[] {
-    const visible = alarms
-      .map((alarm, index) => {
-        const alarmStart = parseTime(alarm.start);
-        const alarmEnd = parseTime(alarm.end);
+    const entries: TimelineEntry<AlarmRange>[] = [];
 
-        if (alarmStart === null || alarmEnd === null || alarmEnd <= alarmStart) {
-          return null;
-        }
+    for (const [index, alarm] of alarms.entries()) {
+      const alarmStart = parseTime(alarm.start);
+      const alarmEnd = parseTime(alarm.end);
 
-        const visibleStart = Math.max(alarmStart, currentRange.startMs);
-        const visibleEnd = Math.min(alarmEnd, currentRange.endMs);
-        if (visibleEnd <= visibleStart) {
-          return null;
-        }
-
-        return {
-          alarm,
-          index,
-          startMs: visibleStart,
-          endMs: visibleEnd,
-          originalStartMs: alarmStart,
-          originalEndMs: alarmEnd,
-        };
-      })
-      .filter(
-        (item): item is {
-          alarm: AlarmRange;
-          index: number;
-          startMs: number;
-          endMs: number;
-          originalStartMs: number;
-          originalEndMs: number;
-        } => item !== null,
-      )
-      .sort(
-        (left, right) =>
-          left.startMs - right.startMs || left.endMs - right.endMs,
-      );
-
-    const merged: {
-      startMs: number;
-      endMs: number;
-      originalStartMs: number;
-      originalEndMs: number;
-      targets: Set<string>;
-      keys: string[];
-    }[] = [];
-
-    for (const item of visible) {
-      const groups = merged[merged.length - 1];
-      if (groups && item.startMs <= groups.endMs + 1000) {
-        groups.endMs = Math.max(groups.endMs, item.endMs);
-        groups.originalStartMs = Math.min(
-          groups.originalStartMs,
-          item.originalStartMs,
-        );
-        groups.originalEndMs = Math.max(groups.originalEndMs, item.originalEndMs);
-        groups.targets.add(item.alarm.target);
-        groups.keys.push(`${item.alarm.start}|${item.alarm.end}|${item.index}`);
+      if (alarmStart === null || alarmEnd === null || alarmEnd <= alarmStart) {
         continue;
       }
 
-      merged.push({
-        startMs: item.startMs,
-        endMs: item.endMs,
-        originalStartMs: item.originalStartMs,
-        originalEndMs: item.originalEndMs,
-        targets: new Set([item.alarm.target]),
-        keys: [`${item.alarm.start}|${item.alarm.end}|${item.index}`],
+      entries.push({
+        key: `${alarm.start}|${alarm.end}|${index}`,
+        item: alarm,
+        startMs: alarmStart,
+        endMs: alarmEnd,
+        target: alarm.target,
       });
     }
 
-    const items = merged.map((item) => {
-      const left = clamp(
-        ((item.startMs - currentRange.startMs) / currentRange.durationMs) * 100,
-        0,
-        100,
-      );
-      const width = clamp(
-        ((item.endMs - item.startMs) / currentRange.durationMs) * 100,
-        0,
-        100 - left,
-      );
-      const targets = [...item.targets].sort();
-      const key = item.keys.join('|');
-
-      return {
-        key,
-        startMs: item.startMs,
-        endMs: item.endMs,
-        originalStartMs: item.originalStartMs,
-        originalEndMs: item.originalEndMs,
-        left,
-        width,
-        targets,
-        className: alignmentClass(targets),
-      };
-    });
-
-    const laneEnds: number[] = [];
-    return items.map((item) => {
-      const gap = 15 * 60_000;
-      let lane = laneEnds.findIndex((endMs) => endMs + gap <= item.startMs);
-      if (lane < 0) {
-        lane = laneEnds.length;
-        laneEnds.push(item.endMs);
-      } else {
-        laneEnds[lane] = item.endMs;
-      }
-
-      return { ...item, lane };
-    });
+    return layoutTimeline(entries, {
+      startMs: currentRange.startMs,
+      endMs: currentRange.endMs,
+      gapMs,
+    }).map((cluster) => ({
+      ...cluster,
+      className: motionClass(cluster.target),
+    }));
   }
 
-  function alignmentClass(targets: string[]): string {
-    const set = new Set(targets);
-
-    if (set.size > 1) {
-      if (set.has('human') && set.has('vehicle')) {
-        return 'motion-human-vehicle';
-      }
-
-      if (set.has('human')) {
-        return 'motion-human-unknown';
-      }
-
-      if (set.has('vehicle')) {
-        return 'motion-vehicle-unknown';
-      }
-
-      return 'motion-unknown';
-    }
-
-    return targets[0] === 'human'
+  function motionClass(target: AlarmTarget): string {
+    return target === 'human'
       ? 'motion-human'
-      : targets[0] === 'vehicle'
+      : target === 'vehicle'
         ? 'motion-vehicle'
         : 'motion-unknown';
   }
 
-  function motionTargetText(targets: string[]): string {
-    if (targets.length === 0) {
-      return 'Motion';
-    }
-
-    return targets
-      .map((target) =>
-        target === 'human'
-          ? 'Person'
-          : target === 'vehicle'
-            ? 'Vehicle'
-            : 'Motion',
-      )
-      .join(' and ');
+  function motionTargetText(target: AlarmTarget): string {
+    return target === 'human'
+      ? 'Person'
+      : target === 'vehicle'
+        ? 'Vehicle'
+        : 'Motion';
   }
 
   function motionLabel(item: MotionItem): string {
-    return `Play recording for ${motionTargetText(item.targets)} alarm from ` +
+    const target = motionTargetText(item.target);
+    const count = item.items.length;
+    const subject =
+      count > 1 ? `${count} ${target.toLowerCase()} alarms` : `${target} alarm`;
+
+    return `Play recording for ${subject} from ` +
       `${formatClock(item.originalStartMs)} to ${formatClock(item.originalEndMs)}`;
   }
 
@@ -777,7 +675,7 @@
         class="playback-timeline-motion-track"
         role="group"
         aria-label="Motion ranges timeline"
-        style={`height:${Math.max(18, motionLaneCount * 10 + 8)}px`}
+        style={`height:${Math.max(24, motionLaneCount * 20 + 6)}px`}
       >
         {#each ticks as tick (tick.key)}
           <span
@@ -791,7 +689,7 @@
           <button
             class="playback-timeline-motion-range {item.className}"
             type="button"
-            style={`left:${item.left}%;width:${item.width}%;top:${4 + item.lane * 10}px`}
+            style={`left:${item.left}%;width:${item.width}%;top:${item.lane * 20 + 3}px`}
             aria-label={motionLabel(item)}
             onpointerenter={(event) =>
               showTooltip(event, { kind: 'motion', item })}
@@ -924,7 +822,10 @@
       {:else}
         {@const motion = tooltip.item}
         <strong class="tooltip-time">
-          {motionTargetText(motion.targets)}
+          {motionTargetText(motion.target)}
+          {#if motion.items.length > 1}
+            <span class="badge">{motion.items.length} alarms</span>
+          {/if}
         </strong>
         <span class="tooltip-row">
           {formatDateRange(motion.originalStartMs, motion.originalEndMs)}

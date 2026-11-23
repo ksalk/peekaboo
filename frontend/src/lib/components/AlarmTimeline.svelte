@@ -5,22 +5,21 @@
   import { formatDate, formatDateRange, formatTime } from '../date-time';
   import { formatDuration } from '../playback-utils';
   import { buildPlaybackLink } from '../playback-links';
+  import {
+    layoutTimeline,
+    timelineClusterGapMs,
+    type TimelineCluster,
+    type TimelineEntry,
+  } from '../timeline-layout';
   import type { AlarmRange, AlarmTarget } from '../types';
 
-  type AlarmBar = {
-    key: string;
-    range: AlarmRange;
-    left: number;
-    width: number;
-    startMs: number;
-    endMs: number;
-    className: string;
-  };
+  type AlarmCluster = TimelineCluster<AlarmRange>;
 
   type CameraLane = {
     key: string;
     label: string;
-    lanes: AlarmBar[][];
+    clusters: AlarmCluster[];
+    laneCount: number;
   };
 
   type DayGroup = {
@@ -34,7 +33,7 @@
   };
 
   type TooltipState = {
-    range: AlarmRange;
+    cluster: AlarmCluster;
     x: number;
     y: number;
     above: boolean;
@@ -67,7 +66,7 @@
         dayStartMs: number;
         cameras: Map<
           string,
-          { label: string; bars: AlarmBar[] }
+          { label: string; entries: TimelineEntry<AlarmRange>[] }
         >;
         count: number;
         ranges: AlarmRange[];
@@ -113,24 +112,17 @@
           if (!camera) {
             camera = {
               label: `${range.cameraName} · ${range.nvrName} · ch ${range.channelId}`,
-              bars: [],
+              entries: [],
             };
             day.cameras.set(cameraKey, camera);
           }
 
-          const durationMs = dayEnd - dayStart;
-          camera.bars.push({
+          camera.entries.push({
             key: `${range.start}|${range.end}|${rangeIndex}|${cameraKey}|${dayStart}`,
-            range,
-            left: clamp(((visibleStart - dayStart) / durationMs) * 100, 0, 100),
-            width: clamp(
-              ((visibleEnd - visibleStart) / durationMs) * 100,
-              0,
-              100,
-            ),
-            startMs: visibleStart,
-            endMs: visibleEnd,
-            className: barClass(range),
+            item: range,
+            startMs: rangeStart,
+            endMs: rangeEnd,
+            target: range.target,
           });
         }
 
@@ -140,40 +132,40 @@
 
     return [...days.values()]
       .sort((left, right) => right.dayStartMs - left.dayStartMs)
-      .map((day) => ({
-        key: `${day.dayStartMs}`,
-        label: formatDate(day.dayStartMs),
-        dayStartMs: day.dayStartMs,
-        dayEndMs: startOfNextDay(day.dayStartMs),
-        count: day.ranges.length,
-        cameras: [...day.cameras.entries()]
-          .map(([key, camera]) => ({
-            key,
-            label: camera.label,
-            lanes: assignLanes(camera.bars),
-          }))
-          .sort((left, right) => left.label.localeCompare(right.label)),
-        ranges: [...day.ranges].sort(
-          (left, right) =>
-            new Date(left.start).getTime() - new Date(right.start).getTime(),
-        ),
-      }));
-  }
+      .map((day) => {
+        const dayEndMs = startOfNextDay(day.dayStartMs);
 
-  function assignLanes(bars: AlarmBar[]): AlarmBar[][] {
-    const lanes: { endMs: number; bars: AlarmBar[] }[] = [];
+        return {
+          key: `${day.dayStartMs}`,
+          label: formatDate(day.dayStartMs),
+          dayStartMs: day.dayStartMs,
+          dayEndMs,
+          count: day.ranges.length,
+          cameras: [...day.cameras.entries()]
+            .map(([key, camera]) => {
+              const clusters = layoutTimeline(camera.entries, {
+                startMs: day.dayStartMs,
+                endMs: dayEndMs,
+                gapMs: timelineClusterGapMs(dayEndMs - day.dayStartMs),
+              });
 
-    for (const bar of [...bars].sort((left, right) => left.startMs - right.startMs)) {
-      const lane = lanes.find((candidate) => candidate.endMs + 15 * 60_000 <= bar.startMs);
-      if (lane) {
-        lane.bars.push(bar);
-        lane.endMs = Math.max(lane.endMs, bar.endMs);
-      } else {
-        lanes.push({ endMs: bar.endMs, bars: [bar] });
-      }
-    }
-
-    return lanes.map((lane) => lane.bars);
+              return {
+                key,
+                label: camera.label,
+                clusters,
+                laneCount: Math.max(
+                  1,
+                  ...clusters.map((cluster) => cluster.lane + 1),
+                ),
+              };
+            })
+            .sort((left, right) => left.label.localeCompare(right.label)),
+          ranges: [...day.ranges].sort(
+            (left, right) =>
+              new Date(left.start).getTime() - new Date(right.start).getTime(),
+          ),
+        };
+      });
   }
 
   function startOfLocalDay(ms: number): number {
@@ -190,8 +182,31 @@
     ).getTime();
   }
 
-  function barClass(range: AlarmRange): string {
-    return `alarm-bar-${range.target}`;
+  function barClass(target: AlarmTarget): string {
+    return `alarm-bar-${target}`;
+  }
+
+  function primaryRange(cluster: AlarmCluster): AlarmRange {
+    return cluster.items[0]!;
+  }
+
+  function clusterLabel(cluster: AlarmCluster): string {
+    const target = displayTarget(primaryRange(cluster));
+    const count = cluster.items.length;
+    const subject =
+      count > 1 ? `${count} ${target.toLowerCase()} alarms` : `${target} alarm`;
+
+    return (
+      `${subject} from ${formatTime(cluster.startMs)} ` +
+      `to ${formatTime(cluster.endMs)}`
+    );
+  }
+
+  function clusterDurationSeconds(cluster: AlarmCluster): number {
+    return Math.max(
+      0,
+      Math.round((cluster.originalEndMs - cluster.originalStartMs) / 1000),
+    );
   }
 
   function targetClass(target: AlarmTarget): string {
@@ -216,7 +231,9 @@
       : targetLabel(range.target);
   }
 
-  function playbackLink(range: AlarmRange): string | null {
+  function playbackLink(cluster: AlarmCluster): string | null {
+    const range = primaryRange(cluster);
+
     return buildPlaybackLink({
       cameraId: range.cameraId,
       start: range.start,
@@ -226,10 +243,10 @@
     });
   }
 
-  function showTooltip(event: PointerEvent, bar: AlarmBar) {
+  function showTooltip(event: PointerEvent, cluster: AlarmCluster) {
     const above = event.clientY > 140;
     tooltip = {
-      range: bar.range,
+      cluster,
       x: clamp(event.clientX, 160, window.innerWidth - 160),
       y: above ? event.clientY - 12 : event.clientY + 18,
       above,
@@ -251,11 +268,11 @@
     };
   }
 
-  function showTooltipAtElement(element: Element, bar: AlarmBar) {
+  function showTooltipAtElement(element: Element, cluster: AlarmCluster) {
     const rect = element.getBoundingClientRect();
     const above = rect.top > 140;
     tooltip = {
-      range: bar.range,
+      cluster,
       x: clamp(rect.left + rect.width / 2, 160, window.innerWidth - 160),
       y: above ? rect.top - 8 : rect.bottom + 8,
       above,
@@ -305,7 +322,7 @@
         >{camera.label}</span>
         <div
           class="alarm-track"
-          style={`height:${Math.max(24, camera.lanes.length * 20 + 6)}px`}
+          style={`height:${Math.max(24, camera.laneCount * 20 + 6)}px`}
         >
           {#each ticks as tick (tick)}
             <span
@@ -315,34 +332,32 @@
             ></span>
           {/each}
 
-          {#each camera.lanes as lane, laneIndex (laneIndex)}
-            {#each lane as bar (bar.key)}
-              <button
-                class={`alarm-bar ${bar.className}`}
-                type="button"
-                style={`left:${bar.left}%;width:${bar.width}%;top:${laneIndex * 20 + 3}px`}
-                aria-label={`${displayTarget(bar.range)} from ${formatTime(bar.startMs)} to ${formatTime(bar.endMs)}`}
-                aria-describedby={`alarm-lane-${day.key}-${cameraIndex}`}
-                onpointerenter={(event) => showTooltip(event, bar)}
-                onpointermove={moveTooltip}
-                onpointerleave={scheduleHide}
-                onfocus={(event) => showTooltipAtElement(event.currentTarget, bar)}
-                onblur={(event) => {
-                  const next = event.relatedTarget;
-                  if (
-                    next instanceof Element &&
-                    next.closest('.floating-tooltip')
-                  ) {
-                    return;
-                  }
-                  scheduleHide();
-                }}
-                onclick={() => {
-                  hideTooltip();
-                  onOpen(bar.range);
-                }}
-              ></button>
-            {/each}
+          {#each camera.clusters as cluster (cluster.key)}
+            <button
+              class={`alarm-bar ${barClass(cluster.target)}`}
+              type="button"
+              style={`left:${cluster.left}%;width:${cluster.width}%;top:${cluster.lane * 20 + 3}px`}
+              aria-label={clusterLabel(cluster)}
+              aria-describedby={`alarm-lane-${day.key}-${cameraIndex}`}
+              onpointerenter={(event) => showTooltip(event, cluster)}
+              onpointermove={moveTooltip}
+              onpointerleave={scheduleHide}
+              onfocus={(event) => showTooltipAtElement(event.currentTarget, cluster)}
+              onblur={(event) => {
+                const next = event.relatedTarget;
+                if (
+                  next instanceof Element &&
+                  next.closest('.floating-tooltip')
+                ) {
+                  return;
+                }
+                scheduleHide();
+              }}
+              onclick={() => {
+                hideTooltip();
+                onOpen(primaryRange(cluster));
+              }}
+            ></button>
           {/each}
         </div>
       </div>
@@ -413,6 +428,8 @@
 {/each}
 
 {#if tooltip}
+  {@const cluster = tooltip.cluster}
+  {@const range = primaryRange(cluster)}
   <FloatingTooltip
     x={tooltip.x}
     y={tooltip.y}
@@ -433,25 +450,32 @@
     }}
   >
     <strong class="tooltip-time">
-      {displayTarget(tooltip.range)}
+      {displayTarget(range)}
+      {#if cluster.items.length > 1}
+        <span class="badge">{cluster.items.length} alarms</span>
+      {/if}
     </strong>
     <span class="tooltip-row">
-      {tooltip.range.cameraName} · {tooltip.range.nvrName} · channel
-      {tooltip.range.channelId}
+      {range.cameraName} · {range.nvrName} · channel
+      {range.channelId}
     </span>
     <span class="tooltip-row">
-      {formatDateRange(tooltip.range.start, tooltip.range.end)}
+      {formatDateRange(cluster.originalStartMs, cluster.originalEndMs)}
     </span>
     <span class="tooltip-row">
-      {formatDuration(tooltip.range.durationSeconds)}
+      {formatDuration(clusterDurationSeconds(cluster))}
     </span>
-    {#if tooltip.range.inferredStart || tooltip.range.inferredEnd}
+    {#if cluster.items.some((item) => item.inferredStart) || cluster.items.some((item) => item.inferredEnd)}
       <span class="tooltip-row">
-        {#if tooltip.range.inferredStart}<span class="badge">estimated start</span>{/if}
-        {#if tooltip.range.inferredEnd}<span class="badge">estimated end</span>{/if}
+        {#if cluster.items.some((item) => item.inferredStart)}
+          <span class="badge">estimated start</span>
+        {/if}
+        {#if cluster.items.some((item) => item.inferredEnd)}
+          <span class="badge">estimated end</span>
+        {/if}
       </span>
     {/if}
-    {@const link = playbackLink(tooltip.range)}
+    {@const link = playbackLink(cluster)}
     {#if link}
       <a class="button small primary tooltip-link" href={link}>
         Open in playback
