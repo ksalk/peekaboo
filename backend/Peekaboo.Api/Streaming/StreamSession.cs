@@ -425,8 +425,8 @@ internal sealed class StreamSession
                         continue;
                     }
 
-                    var codec = Fmp4Codec.TryGetAvc1Codec(box.Data);
-                    if (codec is null)
+                    var codecs = Fmp4Codec.TryGetCodecs(box.Data);
+                    if (codecs is null)
                     {
                         ReportFailure(
                             _isPlayback
@@ -444,7 +444,10 @@ internal sealed class StreamSession
                         offset += part.Length;
                     }
 
-                    PublishReady(new StreamInfo(codec, initSegment));
+                    PublishReady(new StreamInfo(
+                        codecs.VideoCodec,
+                        codecs.AudioCodec,
+                        initSegment));
                     continue;
                 }
 
@@ -584,7 +587,7 @@ internal sealed class StreamSession
     private static void EnqueueReady(StreamSubscriber subscriber, StreamInfo info)
     {
         subscriber.NeedsKeyframe = true;
-        subscriber.Messages.Writer.TryWrite(StreamMessage.Ready(info.Codec));
+        subscriber.Messages.Writer.TryWrite(StreamMessage.Ready(info.Codec, info.AudioCodec));
         subscriber.Messages.Writer.TryWrite(StreamMessage.Init(info.InitSegment));
     }
 
@@ -602,7 +605,12 @@ internal sealed class StreamSession
                     case StreamMessageKind.Ready:
                         await StreamWebSocket.SendJsonAsync(
                             socket,
-                            new { type = "ready", codec = message.Text },
+                            new
+                            {
+                                type = "ready",
+                                codec = message.Text,
+                                audioCodec = message.AudioCodec,
+                            },
                             cancellationToken);
                         break;
 

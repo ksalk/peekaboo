@@ -71,6 +71,105 @@ public sealed class Fmp4Tests
         Assert.Equal("avc1.64001f", Fmp4Codec.TryGetAvc1Codec(moov));
     }
 
+    [Fact]
+    public void Codecs_include_aac_when_audio_track_is_present()
+    {
+        var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
+        var hdlr = Box(
+            "hdlr",
+            [0, 0, 0, 0, 0, 0, 0, 0, (byte)'s', (byte)'o', (byte)'u', (byte)'n', 0, 0, 0, 0]);
+        var mp4a = Box("mp4a", new byte[28]);
+        var audioTrack = Box(
+            "trak",
+            [
+                .. Box(
+                    "mdia",
+                    [
+                        .. hdlr,
+                        .. Box(
+                            "minf",
+                            [
+                                .. Box(
+                                    "stbl",
+                                    [
+                                        .. Box(
+                                            "stsd",
+                                            [0, 0, 0, 0, 0, 0, 0, 1, .. mp4a]),
+                                    ]),
+                            ]),
+                    ]),
+            ]);
+        var moov = Box("moov", [.. Box("mvhd", new byte[8]), .. avcC, .. audioTrack]);
+
+        var codecs = Fmp4Codec.TryGetCodecs(moov);
+
+        Assert.NotNull(codecs);
+        Assert.Equal("avc1.64001f", codecs.VideoCodec);
+        Assert.Equal("mp4a.40.2", codecs.AudioCodec);
+    }
+
+    [Fact]
+    public void Codecs_omit_audio_without_audio_track()
+    {
+        var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
+        var moov = Box("moov", [.. Box("mvhd", new byte[8]), .. avcC]);
+
+        var codecs = Fmp4Codec.TryGetCodecs(moov);
+
+        Assert.NotNull(codecs);
+        Assert.Equal("avc1.64001f", codecs.VideoCodec);
+        Assert.Null(codecs.AudioCodec);
+    }
+
+    [Fact]
+    public void Codecs_require_a_sound_handler_for_audio()
+    {
+        var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
+        var moov = Box(
+            "moov",
+            [.. Box("mvhd", new byte[8]), .. avcC, .. Box("mp4a", new byte[28])]);
+
+        var codecs = Fmp4Codec.TryGetCodecs(moov);
+
+        Assert.NotNull(codecs);
+        Assert.Null(codecs.AudioCodec);
+    }
+
+    [Fact]
+    public void Codecs_require_an_mp4a_sample_entry_for_audio()
+    {
+        var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
+        var hdlr = Box(
+            "hdlr",
+            [0, 0, 0, 0, 0, 0, 0, 0, (byte)'s', (byte)'o', (byte)'u', (byte)'n', 0, 0, 0, 0]);
+        var moov = Box("moov", [.. Box("mvhd", new byte[8]), .. avcC, .. hdlr]);
+
+        var codecs = Fmp4Codec.TryGetCodecs(moov);
+
+        Assert.NotNull(codecs);
+        Assert.Null(codecs.AudioCodec);
+    }
+
+    [Fact]
+    public void Codecs_ignore_an_mp4a_like_byte_sequence_with_an_invalid_box_size()
+    {
+        var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
+        var hdlr = Box(
+            "hdlr",
+            [0, 0, 0, 0, 0, 0, 0, 0, (byte)'s', (byte)'o', (byte)'u', (byte)'n', 0, 0, 0, 0]);
+        var malformedMp4a = new byte[]
+        {
+            0xff, 0xff, 0xff, 0xff,
+            (byte)'m', (byte)'p', (byte)'4', (byte)'a',
+        };
+        var moov = Box("moov", [.. Box("mvhd", new byte[8]), .. avcC, .. hdlr, .. malformedMp4a]);
+
+        var codecs = Fmp4Codec.TryGetCodecs(moov);
+
+        Assert.NotNull(codecs);
+        Assert.Null(codecs.AudioCodec);
+    }
+
     [Theory]
     [InlineData(new byte[0])]
     [InlineData(new byte[] { 1, 2, 3, 4 })]
@@ -98,8 +197,12 @@ public sealed class Fmp4Tests
                      {
                          "-hide_banner", "-loglevel", "error",
                          "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=10",
-                         "-t", "1", "-c:v", "libx264", "-preset", "ultrafast",
+                         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                         "-t", "1",
+                         "-map", "0:v:0", "-map", "1:a:0",
+                         "-c:v", "libx264", "-preset", "ultrafast",
                          "-g", "5", "-pix_fmt", "yuv420p",
+                         "-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
                          "-f", "mp4", "-movflags", "empty_moov+default_base_moof+frag_keyframe",
                          "pipe:1",
                      })
@@ -120,13 +223,13 @@ public sealed class Fmp4Tests
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var reader = new Fmp4Reader(process.StandardOutput.BaseStream);
 
-            string? codec = null;
+            Fmp4Codecs? codecs = null;
             var sawMoof = false;
             var sawMdat = false;
 
             try
             {
-                while (codec is null || !sawMoof || !sawMdat)
+                while (codecs is null || !sawMoof || !sawMdat)
                 {
                     var box = await reader.ReadBoxAsync(timeout.Token);
                     if (box is null)
@@ -134,11 +237,11 @@ public sealed class Fmp4Tests
                         break;
                     }
 
-                    if (codec is null)
+                    if (codecs is null)
                     {
                         if (box.Type == "moov")
                         {
-                            codec = Fmp4Codec.TryGetAvc1Codec(box.Data);
+                            codecs = Fmp4Codec.TryGetCodecs(box.Data);
                         }
 
                         continue;
@@ -159,8 +262,9 @@ public sealed class Fmp4Tests
                 }
             }
 
-            Assert.NotNull(codec);
-            Assert.StartsWith("avc1.", codec, StringComparison.Ordinal);
+            Assert.NotNull(codecs);
+            Assert.StartsWith("avc1.", codecs.VideoCodec, StringComparison.Ordinal);
+            Assert.Equal("mp4a.40.2", codecs.AudioCodec);
             Assert.True(sawMoof, "expected a moof box from ffmpeg");
             Assert.True(sawMdat, "expected an mdat box from ffmpeg");
         }

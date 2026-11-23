@@ -4,7 +4,7 @@ using System.Threading.Channels;
 
 namespace Peekaboo.Api.Streaming;
 
-internal sealed record StreamInfo(string Codec, byte[] InitSegment);
+internal sealed record StreamInfo(string Codec, string? AudioCodec, byte[] InitSegment);
 
 internal enum StreamMessageKind
 {
@@ -18,9 +18,11 @@ internal enum StreamMessageKind
 internal readonly record struct StreamMessage(
     StreamMessageKind Kind,
     string? Text = null,
+    string? AudioCodec = null,
     byte[]? Payload = null)
 {
-    public static StreamMessage Ready(string codec) => new(StreamMessageKind.Ready, Text: codec);
+    public static StreamMessage Ready(string codec, string? audioCodec) =>
+        new(StreamMessageKind.Ready, Text: codec, AudioCodec: audioCodec);
 
     public static StreamMessage Init(byte[] data) => new(StreamMessageKind.Init, Payload: data);
 

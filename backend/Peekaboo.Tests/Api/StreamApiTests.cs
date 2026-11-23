@@ -18,6 +18,7 @@ public sealed class StreamApiTests : IDisposable
     public StreamApiTests()
     {
         File.WriteAllBytes(SamplePath, BuildSample());
+        File.WriteAllBytes(AudioSamplePath, BuildSample(includeAudio: true));
         File.WriteAllText(
             ScriptPath,
             $"""
@@ -25,6 +26,13 @@ public sealed class StreamApiTests : IDisposable
             echo "$$" >> "{StartLogPath}"
             printf '%s\n' "$*" >> "{ArgsLogPath}"
             cat "{SamplePath}"
+            exec sleep 300
+            """);
+        File.WriteAllText(
+            AudioScriptPath,
+            $"""
+            #!/bin/sh
+            cat "{AudioSamplePath}"
             exec sleep 300
             """);
         File.WriteAllText(
@@ -47,12 +55,17 @@ public sealed class StreamApiTests : IDisposable
         if (!OperatingSystem.IsWindows())
         {
             MakeExecutable(ScriptPath);
+            MakeExecutable(AudioScriptPath);
             MakeExecutable(FiniteScriptPath);
             MakeExecutable(FailScriptPath);
         }
     }
 
     private string SamplePath => Path.Combine(_directory, "sample.fmp4");
+
+    private string AudioSamplePath => Path.Combine(_directory, "audio-sample.fmp4");
+
+    private string AudioScriptPath => Path.Combine(_directory, "audio-ffmpeg.sh");
 
     private string StartLogPath => Path.Combine(_directory, "starts.log");
 
@@ -101,6 +114,26 @@ public sealed class StreamApiTests : IDisposable
 
         await CloseQuietlyAsync(socket);
         await WaitForProcessGoneAsync(pid);
+    }
+
+    [Fact]
+    public async Task Ready_message_includes_audio_codec_when_the_stream_has_audio()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var host = CreateHost(scriptPath: AudioScriptPath);
+        var (_, _, cameraId, cookie) = await SetupCameraAsync(host);
+        using var socket = await ConnectAsync(host, cameraId, cookie);
+
+        var (codec, audioCodec) = await ReceiveReadyMessageAsync(socket);
+
+        Assert.Equal("avc1.64001f", codec);
+        Assert.Equal("mp4a.40.2", audioCodec);
+
+        await CloseQuietlyAsync(socket);
     }
 
     [Fact]
@@ -726,7 +759,11 @@ public sealed class StreamApiTests : IDisposable
         return client;
     }
 
-    private static async Task<string> ReceiveReadyAsync(WebSocket socket)
+    private static async Task<string> ReceiveReadyAsync(WebSocket socket) =>
+        (await ReceiveReadyMessageAsync(socket)).Codec;
+
+    private static async Task<(string Codec, string? AudioCodec)> ReceiveReadyMessageAsync(
+        WebSocket socket)
     {
         var (type, data) = await ReceiveMessageAsync(socket);
         Assert.Equal(WebSocketMessageType.Text, type);
@@ -734,7 +771,13 @@ public sealed class StreamApiTests : IDisposable
         using var document = JsonDocument.Parse(data);
         Assert.Equal("ready", document.RootElement.GetProperty("type").GetString());
 
-        return document.RootElement.GetProperty("codec").GetString()!;
+        var codec = document.RootElement.GetProperty("codec").GetString()!;
+        var audioCodec = document.RootElement.TryGetProperty("audioCodec", out var audioProperty) &&
+                         audioProperty.ValueKind != JsonValueKind.Null
+            ? audioProperty.GetString()
+            : null;
+
+        return (codec, audioCodec);
     }
 
     private static async Task<string> ReceiveTextMessageAsync(WebSocket socket)
@@ -908,10 +951,24 @@ public sealed class StreamApiTests : IDisposable
         }
     }
 
-    private static byte[] BuildSample()
+    private static byte[] BuildSample(bool includeAudio = false)
     {
         var avcC = Box("avcC", [1, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x00]);
-        var moov = Box("moov", [.. Box("mvhd", new byte[8]), .. avcC]);
+        var moovChildren = new List<byte[]> { Box("mvhd", new byte[8]), avcC };
+
+        if (includeAudio)
+        {
+            var hdlr = Box(
+                "hdlr",
+                [0, 0, 0, 0, 0, 0, 0, 0, (byte)'s', (byte)'o', (byte)'u', (byte)'n', 0, 0, 0, 0]);
+            var stsd = Box("stsd", [0, 0, 0, 0, 0, 0, 0, 1, .. Box("mp4a", new byte[28])]);
+            var mdia = Box(
+                "mdia",
+                [.. hdlr, .. Box("minf", [.. Box("stbl", [.. stsd])])]);
+            moovChildren.Add(Box("trak", [.. mdia]));
+        }
+
+        var moov = Box("moov", [.. moovChildren.SelectMany(part => part)]);
         var ftyp = Box("ftyp", Encoding.ASCII.GetBytes("isom0000"));
         var moof = Box("moof", new byte[16]);
         var mdat = Box("mdat", Encoding.ASCII.GetBytes("video-payload"));
