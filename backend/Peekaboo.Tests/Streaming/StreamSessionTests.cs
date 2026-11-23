@@ -69,11 +69,7 @@ public sealed class StreamSessionTests : IDisposable
         await WaitForFileLengthAsync(argsPath, 1);
 
         var arguments = await File.ReadAllLinesAsync(argsPath);
-        Assert.Contains("0:a:0?", arguments);
-        Assert.Contains("aac", arguments);
-        Assert.Contains("aac_low", arguments);
-        Assert.Contains("48000", arguments);
-        Assert.DoesNotContain("-an", arguments);
+        AssertAacAudioArguments(arguments);
 
         await session.StopAsync(errorMessage: null);
     }
@@ -133,7 +129,7 @@ public sealed class StreamSessionTests : IDisposable
         var arguments = await File.ReadAllLinesAsync(argsPath);
         Assert.Contains("mpeg", arguments);
         Assert.Contains("pipe:0", arguments);
-        Assert.Contains("-an", arguments);
+        AssertAacAudioArguments(arguments);
         Assert.Contains(arguments, argument => argument.Contains("frag_keyframe", StringComparison.Ordinal));
         Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
 
@@ -181,10 +177,50 @@ public sealed class StreamSessionTests : IDisposable
         Assert.Contains("pipe:0", arguments);
         Assert.Contains("-t", arguments);
         Assert.Contains("300", arguments);
+        AssertAacAudioArguments(arguments);
         Assert.Contains(arguments, argument => argument.Contains("frag_every_frame", StringComparison.Ordinal));
         Assert.Equal(payload, await File.ReadAllBytesAsync(stdinPath));
 
         await session.StopAsync(errorMessage: null);
+    }
+
+    [Fact]
+    public async Task Sdk_audio_fallback_arguments_disable_audio()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var argsPath = Path.Combine(_directory, "sdk-video-args.txt");
+        var script = CreateScript(
+            $"printf '%s\\n' \"$@\" > \"{argsPath}\"\nexec sleep 300");
+        var input = new RecordingInput([0, 0, 1, 0xba, 1, 2, 3, 4]);
+        var session = CreateSession(
+            script,
+            onTerminated: null,
+            new HikvisionLiveStreamSource("nvr", "192.168.10.60", 8000, 1, 0),
+            input,
+            StreamKey.Live("camera", CameraStream.Sub, audioEnabled: false));
+
+        session.Start();
+        await WaitForFileLengthAsync(argsPath, 1);
+
+        var arguments = await File.ReadAllLinesAsync(argsPath);
+        Assert.Contains("-an", arguments);
+        Assert.DoesNotContain("0:a:0?", arguments);
+        Assert.DoesNotContain("aac", arguments);
+
+        await session.StopAsync(errorMessage: null);
+    }
+
+    private static void AssertAacAudioArguments(string[] arguments)
+    {
+        Assert.Contains("0:a:0?", arguments);
+        Assert.Contains("aac", arguments);
+        Assert.Contains("aac_low", arguments);
+        Assert.Contains("48000", arguments);
+        Assert.DoesNotContain("-an", arguments);
     }
 
     private string StartLogPath => Path.Combine(_directory, "starts.log");

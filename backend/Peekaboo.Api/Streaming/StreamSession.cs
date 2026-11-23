@@ -314,9 +314,8 @@ internal sealed class StreamSession
         };
     }
 
-    private string[] BuildRtspArguments(string[] durationArguments)
-    {
-        var audioArguments = Key.AudioEnabled
+    private string[] AudioArguments() =>
+        Key.AudioEnabled
             ? new[]
             {
                 "-map", "0:a:0?",
@@ -328,28 +327,27 @@ internal sealed class StreamSession
             }
             : ["-an"];
 
-        return
-        [
-            "-hide_banner",
-            "-loglevel", "error",
-            "-rtsp_transport", _options.RtspTransport,
-            "-analyzeduration", "1000000",
-            "-probesize", "1000000",
-            "-i", _streamUrl,
-            "-map", "0:v:0",
-            .. audioArguments,
-            "-sn",
-            "-dn",
-            .. durationArguments,
-            "-c:v", "copy",
-            "-f", "mp4",
-            "-movflags", "empty_moov+default_base_moof+frag_keyframe",
-            "-flush_packets", "1",
-            "pipe:1",
-        ];
-    }
+    private string[] BuildRtspArguments(string[] durationArguments) =>
+    [
+        "-hide_banner",
+        "-loglevel", "error",
+        "-rtsp_transport", _options.RtspTransport,
+        "-analyzeduration", "1000000",
+        "-probesize", "1000000",
+        "-i", _streamUrl,
+        "-map", "0:v:0",
+        .. AudioArguments(),
+        "-sn",
+        "-dn",
+        .. durationArguments,
+        "-c:v", "copy",
+        "-f", "mp4",
+        "-movflags", "empty_moov+default_base_moof+frag_keyframe",
+        "-flush_packets", "1",
+        "pipe:1",
+    ];
 
-    private static string[] BuildSdkArguments(
+    private string[] BuildSdkArguments(
         string[] durationArguments,
         bool perFrameFragments) =>
     [
@@ -360,7 +358,7 @@ internal sealed class StreamSession
         "-probesize", "1000000",
         "-i", "pipe:0",
         "-map", "0:v:0",
-        "-an",
+        .. AudioArguments(),
         "-sn",
         "-dn",
         .. durationArguments,

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Peekaboo.Api.Hikvision;
@@ -62,65 +63,27 @@ public sealed class HikvisionIntegrationTests
             return;
         }
 
-        var configuration = new ConfigurationBuilder()
-            .AddEnvironmentVariables()
-            .Build();
-        var options = HikvisionSdkOptions.FromConfiguration(configuration);
-        using var runtime = new HikvisionSdkRuntime(
-            options,
-            NullLogger<HikvisionSdkRuntime>.Instance);
-        var loginApi = new HikvisionLoginApi(
-            CameraCredentials.FromConfiguration(configuration),
-            runtime,
-            NullLogger<HikvisionLoginApi>.Instance);
-        await using var pool = new HikvisionConnectionPool(
-            loginApi,
-            NullLogger<HikvisionConnectionPool>.Instance);
-
-        var host = Environment.GetEnvironmentVariable("HIK_TEST_NVR")
-            ?? throw new InvalidOperationException("HIK_TEST_NVR is required.");
-        var port = int.TryParse(
-            Environment.GetEnvironmentVariable("HIK_TEST_PORT"),
-            out var parsedPort)
-            ? parsedPort
-            : 8000;
-        var isapiChannel = int.TryParse(
-            Environment.GetEnvironmentVariable("HIK_TEST_ISAPI_CHANNEL"),
-            out var parsedChannel)
-            ? parsedChannel
-            : 1;
-        var streamType = int.TryParse(
-            Environment.GetEnvironmentVariable("HIK_TEST_STREAM_TYPE"),
-            out var parsedStreamType)
-            ? parsedStreamType
-            : 1;
-
-        var input = new HikvisionLiveInput(
-            new HikvisionLiveStreamSource(
-                "integration",
-                host,
-                port,
-                isapiChannel,
-                streamType),
-            pool,
-            NullLogger<HikvisionLiveInput>.Instance);
-
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-        using var destination = new MemoryStream();
-
-        try
-        {
-            await Task.Run(
-                () => input.RunAsync(destination, cancellation.Token),
-                cancellation.Token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
+        var data = await CaptureLiveSdkAsync();
 
         Assert.True(
-            destination.Length > 1000,
-            $"Expected live SDK data, but received {destination.Length} bytes.");
+            data.Length > 1000,
+            $"Expected live SDK data, but received {data.Length} bytes.");
+    }
+
+    [Fact]
+    public async Task Live_sdk_stream_contains_audio()
+    {
+        if (!IsEnabled() || !ExpectAudio())
+        {
+            return;
+        }
+
+        var data = await CaptureLiveSdkAsync();
+        var streams = await ProbeStreamTypesAsync(data);
+
+        Assert.True(
+            streams.Split('\n', StringSplitOptions.RemoveEmptyEntries).Contains("audio"),
+            $"ffprobe reported: {streams} ({data.Length} bytes).");
     }
 
     [Fact]
@@ -262,6 +225,114 @@ public sealed class HikvisionIntegrationTests
             segment => segment.Start < start.AddMinutes(5) && segment.End > start);
     }
 
+    private static async Task<byte[]> CaptureLiveSdkAsync()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .Build();
+        var options = HikvisionSdkOptions.FromConfiguration(configuration);
+        using var runtime = new HikvisionSdkRuntime(
+            options,
+            NullLogger<HikvisionSdkRuntime>.Instance);
+        var loginApi = new HikvisionLoginApi(
+            CameraCredentials.FromConfiguration(configuration),
+            runtime,
+            NullLogger<HikvisionLoginApi>.Instance);
+        await using var pool = new HikvisionConnectionPool(
+            loginApi,
+            NullLogger<HikvisionConnectionPool>.Instance);
+
+        var host = Environment.GetEnvironmentVariable("HIK_TEST_NVR")
+            ?? throw new InvalidOperationException("HIK_TEST_NVR is required.");
+        var port = int.TryParse(
+            Environment.GetEnvironmentVariable("HIK_TEST_PORT"),
+            out var parsedPort)
+            ? parsedPort
+            : 8000;
+        var isapiChannel = int.TryParse(
+            Environment.GetEnvironmentVariable("HIK_TEST_ISAPI_CHANNEL"),
+            out var parsedChannel)
+            ? parsedChannel
+            : 1;
+        var streamType = int.TryParse(
+            Environment.GetEnvironmentVariable("HIK_TEST_STREAM_TYPE"),
+            out var parsedStreamType)
+            ? parsedStreamType
+            : 1;
+
+        var input = new HikvisionLiveInput(
+            new HikvisionLiveStreamSource(
+                "integration",
+                host,
+                port,
+                isapiChannel,
+                streamType),
+            pool,
+            NullLogger<HikvisionLiveInput>.Instance);
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var destination = new MemoryStream();
+
+        try
+        {
+            await Task.Run(
+                () => input.RunAsync(destination, cancellation.Token),
+                cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        return destination.ToArray();
+    }
+
+    private static async Task<string> ProbeStreamTypesAsync(byte[] data)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "ffprobe",
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        foreach (var argument in new[]
+                 {
+                     "-hide_banner", "-loglevel", "error",
+                     "-f", "mpeg", "-i", "pipe:0",
+                     "-show_entries", "stream=codec_type",
+                     "-of", "csv=p=0",
+                 })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("ffprobe did not start.");
+
+        try
+        {
+            await process.StandardInput.BaseStream.WriteAsync(data);
+        }
+        catch (IOException)
+        {
+            // ffprobe may exit after it has enough stream information.
+        }
+        finally
+        {
+            process.StandardInput.Close();
+        }
+
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.True(process.ExitCode == 0, $"ffprobe failed: {error}");
+        return output;
+    }
+
     private sealed class CountingStream : Stream
     {
         private const int HeadLimit = 4096;
@@ -344,6 +415,12 @@ public sealed class HikvisionIntegrationTests
     private static bool IsEnabled() =>
         string.Equals(
             Environment.GetEnvironmentVariable("PEEKABOO_HIK_INTEGRATION"),
+            "1",
+            StringComparison.Ordinal);
+
+    private static bool ExpectAudio() =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("HIK_TEST_EXPECT_AUDIO"),
             "1",
             StringComparison.Ordinal);
 }

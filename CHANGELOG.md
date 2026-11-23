@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Live and recorded audio for RTSP and Hikvision SDK streams, transcoded to AAC-LC
+  and muted by default until enabled per viewer. If a mapped audio stream stalls
+  the muxer, the web client reconnects to a video-only stream.
+
 ## [0.1.0] - 2026-11-23
 
 ### Added

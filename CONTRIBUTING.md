@@ -29,8 +29,8 @@ and Chrome/Chromium with H.264 support, and uses ports 8555, 5080 and 5173.
 
 - Keep the core promise intact: no stream may start without an explicit viewer, and
   every stop path must terminate the server-side pull.
-- Prefer the simplest solution that preserves that guarantee. There is no
-  transcoding, recording, or background polling.
+- Prefer the simplest solution that preserves that guarantee. Video is copied;
+  only audio is transcoded to AAC. There is no recording or background polling.
 - Add or update tests for behaviour changes. Streaming lifecycle changes should be
   covered by the Playwright suite.
 - Never commit secrets, `.env` files, databases, generated certificates, or

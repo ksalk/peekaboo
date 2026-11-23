@@ -15,9 +15,9 @@ stream. The same rule applies to recorded playback.
 - **Explicit streaming** — feeds start only when you press **Start** and stop on
   **Stop**, tab hide, navigation, logout, or disconnect.
 - **Bandwidth-aware** — one shared upstream pull per camera and stream even if
-  several browsers or grid cells watch it; video is copied and RTSP audio is
-  transcoded to AAC when present (SDK audio support follows separately);
-  configurable caps. Works over RTSP or the Hikvision SDK.
+  several browsers or grid cells watch it; video is copied and audio is
+  transcoded to AAC when present; configurable caps. Works over RTSP or the
+  Hikvision SDK.
 - **Grid layouts** — 1×1, 1×2, 2×1, 2×2 and 3×3; click a cell to assign a camera.
   Layouts and assignments are remembered per device and never auto-start.
 - **Playback** — search a camera's NVR recordings over a From/To date-time range,
@@ -43,7 +43,7 @@ Browsers cannot play RTSP. Peekaboo relays each feed through ffmpeg:
 
 ```text
 RTSP NVR channel  ─┐
-                   ├──ffmpeg (copy)──▶ fragmented MP4 ──WebSocket──▶ browser MediaSource
+                   ├──ffmpeg (copy video, AAC audio)──▶ fragmented MP4 ──WebSocket──▶ browser MediaSource
 SDK PS callback  ──┘
                         │
                         └── started by the first viewer, killed with the last
@@ -66,9 +66,8 @@ rtsp://<NVR host>[:port]/ISAPI/Streaming/channels/<stream ID>
 The stream ID selects both the channel and stream type: `101` is channel 1 main,
 `102` is channel 1 sub, and `1601` is channel 16 main.
 
-- `ffmpeg` copies the H.264 video stream (`-c:v copy`) and, for RTSP sources,
-  transcodes audio to AAC-LC when present. SDK audio support follows separately.
-  CPU usage stays low.
+- `ffmpeg` copies the H.264 video stream (`-c:v copy`) and transcodes audio to
+  AAC-LC when present, for both RTSP and SDK sources. CPU usage stays low.
 - The browser receives `ftyp`/`moov`/`moof`/`mdat` boxes over WebSocket and feeds
   them to a `MediaSource`.
 - Streams are refcounted per camera and stream. Two cells watching the same camera
@@ -536,8 +535,11 @@ See [SECURITY.md](SECURITY.md) for reporting a vulnerability.
 
 ## Limitations
 
-- H.264 only; no transcoding or H.265 support for live streams or recordings.
-- Video only; audio is intentionally dropped to save bandwidth.
+- H.264 only; no video transcoding or H.265 support for live streams or recordings.
+- Audio is transcoded to AAC-LC and only available when the source recording or
+  live stream actually contains an audio track. Audio support has been verified
+  with Hikvision RTSP and SDK MPEG-PS sources; unusual source audio encodings may
+  fail to decode.
 - 1–3 second latency (depends on the NVR/camera GOP/encoder settings).
 - One app instance per database; streaming state is in-process and not clustered.
 - No in-app recording, export/download, PTZ controls, or automatic live-stream
